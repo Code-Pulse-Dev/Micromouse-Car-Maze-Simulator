@@ -684,23 +684,47 @@ function plannedRoute(c) {
 /* ============================ adapter (car code) ============================ */
 let pyodide = null, pyClass = null, pyControllers = {}, jsStub = null;
 let adapterState = { type: "builtin", name: "built-in logic", source: null };
-const PY_CDN = "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/";
+const PY_CDNS = [
+  "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/",
+  "https://fastly.jsdelivr.net/pyodide/v0.26.2/full/",
+  "https://unpkg.com/pyodide@0.26.2/",
+];
 
 function pyControllersActive() {
   return (adapterState.type === "carA" || adapterState.type === "carB" ||
           adapterState.type === "uploaded") && adapterState.source && !jsStub;
 }
-function loadScript(src) {
+function loadScript(src, ms = 30000) {
   return new Promise((res, rej) => {
     const s = document.createElement("script");
-    s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s);
+    const t = setTimeout(() => rej(new Error("timeout loading " + src)), ms);
+    s.src = src;
+    s.onload = () => { clearTimeout(t); res(); };
+    s.onerror = () => { clearTimeout(t); rej(new Error("failed to load " + src)); };
+    document.head.appendChild(s);
   });
 }
 async function ensurePyodide() {
   if (pyodide) return pyodide;
   codeStatus.textContent = "Loading Python runtime (Pyodide)…";
-  if (!window.loadPyodide) await loadScript(PY_CDN + "pyodide.js");
-  pyodide = await window.loadPyodide({ indexURL: PY_CDN });
+  // try the CDNs in order: the first one can be slow or blocked on some
+  // networks, so fall back to a mirror before giving up
+  let lastErr = null;
+  for (const cdn of PY_CDNS) {
+    try {
+      if (!window.loadPyodide) await loadScript(cdn + "pyodide.js");
+      pyodide = await window.loadPyodide({ indexURL: cdn });
+      break;
+    } catch (e) {
+      lastErr = e;
+      window.loadPyodide = undefined;
+      pyodide = undefined;
+    }
+  }
+  if (!pyodide) {
+    throw new Error("could not load the Python runtime (" +
+      (lastErr && lastErr.message || "network blocked") + ") — check your internet connection");
+  }
   pyodide.runPython(`
 _NS = {}
 _CLS = None
@@ -1666,16 +1690,41 @@ async function ghApi(owner, repo, path) {
   const enc = (path || "").split("/").filter(Boolean).map(encodeURIComponent).join("/");
   const url = "https://api.github.com/repos/" + encodeURIComponent(owner) + "/" +
     encodeURIComponent(repo) + "/contents/" + enc;
-  const res = await fetch(url, { headers: { Accept: "application/vnd.github+json" } });
-  if (!res.ok) throw new Error("GitHub API HTTP " + res.status);
+  const res = await fetchTimeout(url, { headers: { Accept: "application/vnd.github+json" } });
+  if (!res.ok) throw new Error("GitHub API HTTP " + res.status +
+    (res.status === 403 ? " (rate limit — wait a few minutes and try again)" : ""));
   return await res.json();
+}
+async function fetchTimeout(url, opts = {}, ms = 15000) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  try { return await fetch(url, { ...opts, signal: ctl.signal }); }
+  finally { clearTimeout(t); }
 }
 async function ghRaw(owner, repo, path) {
   const enc = (path || "").split("/").filter(Boolean).map(encodeURIComponent).join("/");
-  const res = await fetch("https://raw.githubusercontent.com/" + encodeURIComponent(owner) + "/" +
-    encodeURIComponent(repo) + "/" + enc);
-  if (!res.ok) throw new Error("HTTP " + res.status);
-  return await res.text();
+  const errs = [];
+  // 1. raw.githubusercontent.com - fast where it works
+  try {
+    const res = await fetchTimeout("https://raw.githubusercontent.com/" +
+      encodeURIComponent(owner) + "/" + encodeURIComponent(repo) + "/" + enc);
+    if (res.ok) return await res.text();
+    errs.push("raw HTTP " + res.status);
+  } catch (e) {
+    errs.push(e.name === "AbortError" ? "raw timed out" : "raw failed (" + e.message + ")");
+  }
+  // 2. fallback: the GitHub contents API serves the same file raw and
+  // works on networks where raw.githubusercontent.com is blocked
+  try {
+    const res = await fetchTimeout("https://api.github.com/repos/" +
+      encodeURIComponent(owner) + "/" + encodeURIComponent(repo) + "/contents/" + enc,
+      { headers: { Accept: "application/vnd.github.raw" } });
+    if (res.ok) return await res.text();
+    errs.push("api HTTP " + res.status);
+  } catch (e) {
+    errs.push(e.name === "AbortError" ? "api timed out" : "api failed (" + e.message + ")");
+  }
+  throw new Error("could not download the file — " + errs.join("; "));
 }
 
 function ghOpen(target) {
@@ -1805,7 +1854,10 @@ function ghRender(statusMsg) {
       try {
         const src = await ghRaw(ghCtx.owner, ghCtx.repo, it.path);
         pre.textContent = "— " + it.name + " (preview, not uploaded) —\n\n" + src.slice(0, 2500);
-      } catch (e) { pre.textContent = "Preview failed: " + e.message; }
+      } catch (e) {
+        pre.textContent = "Preview failed: " + (e && e.message || e) +
+          "\nTip: use \"Open on GitHub\" to view the code on github.com instead.";
+      }
     };
   });
 }
@@ -1830,9 +1882,14 @@ function ghAskUpload(it) {
   };
 }
 async function ghDoUpload(it) {
+  const key = ghCtx.target;
   try {
+    ghCtx.note = "Fetching " + it.path + "…";
+    ghRender();
     const src = await ghRaw(ghCtx.owner, ghCtx.repo, it.path);
-    const key = ghCtx.target;
+    ghCtx.note = "Installing adapter — the first install downloads the Python runtime, this can take up to a minute…";
+    ghRender();
+    readyEl(key).textContent = "Installing adapter code for " + targetLabel(key) + "…";
     uploadTarget = key;
     MODEL_SOURCES[key] = src;
     if (key === "mycar") {
@@ -1846,7 +1903,8 @@ async function ghDoUpload(it) {
     ghCtx.note = "Upload successful — adapter connected: " + it.path;
     ghRender();
   } catch (e) {
-    ghCtx.note = "Upload failed: " + e.message;
+    readyEl(key).textContent = "Upload failed: " + (e && e.message || e);
+    ghCtx.note = "Upload failed: " + (e && e.message || e);
     ghRender();
   }
 }
