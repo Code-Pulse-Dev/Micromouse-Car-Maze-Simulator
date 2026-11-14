@@ -48,6 +48,24 @@
   .statusline { font-size:12.5px; color:#ffd43b; min-height:18px; margin-top:8px; line-height:1.4; }
   .log { background:#0b1324; border:1px solid var(--line); border-radius:8px; height:120px;
          overflow:auto; font-family:Consolas, monospace; font-size:11.5px; padding:8px; color:#c9d6ea; }
+  .g2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px; }
+  .statusTitle { font-weight:600; font-size:14px; margin:0 0 10px; }
+  .statusBody { font-size:12.5px; line-height:1.6; color:#dbe4f3; }
+  .statusBody .carLine { color:#ffd43b; }
+  .card { display:flex; gap:9px; align-items:center; padding:6px 4px; font-size:13px;
+          color:var(--blue); cursor:pointer; }
+  .card input { flex:none; }
+  .modelBlock { margin-bottom:2px; }
+  .modelRow { display:flex; gap:6px; align-items:center; margin:2px 0 4px 22px; }
+  .modelRow label { color:var(--dim); font-size:12.5px; white-space:nowrap; }
+  .modelRow input[type=text] { flex:1; min-width:0; padding:4px 7px; font-size:12px; }
+  button.mini { width:auto; font-size:11px; padding:5px 8px; white-space:nowrap; }
+  .ready { font-size:11.5px; color:#69db7c; margin:0 0 9px 22px; line-height:1.4; }
+  .hint ul { margin:6px 0 0 15px; padding:0; }
+  .hint li { margin-bottom:5px; }
+  .hwRow { display:flex; gap:8px; align-items:center; margin:9px 0; font-size:12.5px; }
+  .hwRow label { color:var(--dim); white-space:nowrap; }
+  .hwRow select { flex:1; min-width:0; }
   .battery { font-size:13px; color:#69db7c; margin:6px 0; }
   input[type=text], input[type=number] { background:var(--panel2); color:var(--text);
       border:1px solid var(--line); border-radius:8px; padding:7px 10px; font-size:13px; width:100%; }
@@ -106,62 +124,108 @@
     </div>
 
     <div class="pane" id="pane-tools">
-      <button id="btnAnalyze">Analyze Maze</button>
-      <div class="row"><label>Load Maze (JSON)</label></div>
-      <input type="file" id="fileMaze" accept=".json">
-      <div class="row" style="margin-top:12px"><label>Recordings</label></div>
-      <button id="btnRecord">Record</button>
-      <button id="btnReplay" style="margin-top:8px">Replay</button>
-      <button id="btnSaveRec" style="margin-top:8px">Save Recording</button>
-      <input type="file" id="fileRec" accept=".json" style="margin-top:8px">
-      <div class="hint">Record captures every simulation step; save it as JSON or replay it in the browser.</div>
+      <div class="g2">
+        <button id="btnToolsSave">Save</button>
+        <button id="btnToolsLoad">Load</button>
+        <button id="btnExportMaze">Export</button>
+        <button id="btnImportMaze">Import</button>
+      </div>
+      <button id="btnAnalyze" style="margin-bottom:8px">Analyze Maze</button>
+      <div class="g2">
+        <button id="btnRecord">Record</button>
+        <button id="btnReplay">Replay</button>
+        <button id="btnSaveRec">Save Recording</button>
+        <button id="btnLoadRec">Load Recording</button>
+      </div>
+      <input type="file" id="fileMaze" accept=".json" hidden>
+      <input type="file" id="fileRec" accept=".json" hidden>
+      <div class="hint">Save keeps the maze in this browser and downloads a JSON copy.
+        Load reopens a saved maze; Export / Import move maze files in and out.
+        Record captures every step — replay it, or save and load the recording as JSON.</div>
     </div>
 
     <div class="pane" id="pane-status">
-      <table id="stats">
-        <tr><th>Car</th><th>Explored</th><th>Distance</th><th>Turns</th><th>Status</th></tr>
-      </table>
+      <div class="statusTitle">Simulation Status</div>
+      <div class="statusBody" id="statusBody"></div>
       <div class="statusline" id="telemetry"></div>
-      <div class="sub">Legend</div>
-      <div class="hint">Orange numbers: flood value of car 1 · Gold cells: the centre goals ·
-        Dashed lines: planned route · Green ticks: walls already sensed.</div>
+      <div class="hint" style="margin-top:16px">Click Near A Cell Edge To Toggle A Wall.<br>
+        Orange Color: Flood Value<br>Gold Color: Goal</div>
     </div>
 
     <div class="pane" id="pane-code">
-      <div class="row"><label>Car Type (all four cars)</label></div>
-      <select id="carType">
-        <option value="builtin" selected>Built-in logic</option>
-        <option value="carA">ESP32-S3 Micromouse adapter</option>
-        <option value="carB">TQD Micromouse JS2 adapter</option>
-        <option value="uploaded">Uploaded code folder</option>
-      </select>
-      <button id="btnUpload" style="margin-top:10px">Upload Code Folder</button>
-      <input type="file" id="fileCode" webkitdirectory directory multiple style="display:none">
-      <div class="statusline" id="codeStatus">Adapter: built-in logic</div>
-      <div class="hint">Your folder must contain a <b>CarController.py</b> defining
-        <b>class CarController</b> with <b>next_move(state)</b> returning
-        <i>forward / left / right / back / stop</i>.<br><br>
-        Python runs in the browser through Pyodide (WebAssembly) — the first load downloads the
-        runtime, so give it a few seconds. The competition rules are enforced by the simulator:
-        a car is held at its quadrant boundary and cannot drive through a wall.</div>
+      <div class="statusTitle">Car Type (Applies To All 4 Cars)</div>
+      <label class="card"><input type="radio" name="cartype" value="builtin" checked>
+        <span>Built-in Scenarios (No Uploaded Code)</span></label>
+      <div class="modelBlock">
+        <label class="card"><input type="radio" name="cartype" value="carA">
+          <span>ESP32-S3 Micromouse</span></label>
+        <div class="modelRow"><label>Name:</label>
+          <input type="text" id="nameA" value="ESP32-S3 Micromouse" readonly>
+          <button id="upA" class="mini">Upload Code Folder…</button></div>
+        <div class="ready" id="readyA">Ready: ESP32-S3 Micromouse simulation adapter</div>
+      </div>
+      <div class="modelBlock">
+        <label class="card"><input type="radio" name="cartype" value="carB">
+          <span>TQD Micromouse JS2</span></label>
+        <div class="modelRow"><label>Name:</label>
+          <input type="text" id="nameB" value="TQD Micromouse JS2" readonly>
+          <button id="upB" class="mini">Upload Code Folder…</button></div>
+        <div class="ready" id="readyB">Ready: TQD Micromouse JS2 simulation adapter</div>
+      </div>
+      <div class="modelBlock">
+        <label class="card"><input type="radio" name="cartype" value="mycar">
+          <span>My car</span></label>
+        <div class="modelRow"><label>Name:</label>
+          <input type="text" id="nameC" value="My car">
+          <button id="upC" class="mini">Upload Code Folder…</button></div>
+        <div class="ready" id="readyC">Ready: (Upload Code File)</div>
+      </div>
+      <input type="file" id="fileCode" webkitdirectory directory multiple hidden>
+      <div class="hint"><b>How it works:</b>
+        <ul>
+          <li>Tick/Select the first car model (Built-in Scenarios), then Run under different
+            conditions — no code upload needed.</li>
+          <li>Otherwise, tick/select a car model (ESP32-S3 Micromouse, TQD Micromouse JS2, or your
+            own car using "My Car"), then Upload the corresponding code folder or adapter file,
+            then Run under different conditions.</li>
+          <li>You can explore the different panels to see how the cars and simulations are
+            performing.</li>
+        </ul>
+        Python runs in the browser through Pyodide — the first adapter load downloads the runtime.
+      </div>
+      <div class="statusline" id="codeStatus"></div>
     </div>
 
     <div class="pane" id="pane-hw">
-      <div class="row"><label>Baud rate</label><input type="text" id="baud" value="115200"></div>
-      <button id="btnPair">Pair Real Car (USB)</button>
-      <button id="btnUnpair" style="margin-top:8px" disabled>Disconnect</button>
-      <button id="btnPing" style="margin-top:8px" disabled>Request Status (BAT)</button>
+      <div class="statusTitle">Real Car Connection</div>
+      <div class="hwRow"><label>Your Software</label>
+        <select id="hwSoftware">
+          <option>Arduino IDE</option>
+          <option>Arduino CLI</option>
+          <option>Arduino Web Editor</option>
+          <option>PlatformIO (VS Code)</option>
+          <option>VS Code</option>
+          <option>Other</option>
+        </select></div>
+      <div class="hwRow"><label>USB port</label>
+        <select id="hwPorts"><option value="-1">— scan ports —</option></select></div>
+      <div class="g2">
+        <button id="btnScan">Scan Ports</button>
+        <button id="btnPair">Connect</button>
+      </div>
+      <div class="statusline" id="hwStatus">Not paired — scan ports and connect</div>
       <div class="battery" id="battery">Battery: Not Connected</div>
       <div class="log" id="hwLog"></div>
-      <div class="hint">Uses the browser's Web Serial API (Chrome / Edge on https).
-        The car should answer with lines such as <b>{"name":"TQD Micromouse JS2","voltage":7.86}</b>,
-        <b>BAT:7.86V</b> or <b>BAT:87</b> (percent).</div>
+      <div class="hint">The car answers with lines such as {"name": "TQD Micromouse JS2",
+        "voltage": 7.86} (or BAT:7.86V, BAT:87 for percent) — firmware support required.
+        Web Serial needs Chrome or Edge on https.</div>
     </div>
   </div>
 </div>
 
 <div class="modal" id="modal"><div class="box">
-  <h3 style="margin:0 0 10px">Maze analysis</h3>
+  <h3 id="modalTitle" style="margin:0 0 10px">Maze analysis</h3>
+  <div id="modalList"></div>
   <pre id="modalText"></pre>
   <button id="modalClose">Close</button>
 </div></div>
@@ -218,7 +282,7 @@ let running = false, timer = null, totalSteps = 0;
 let turnDelay = false, collisionChecking = true, trails = false, showPath = true, sweepFar = true;
 let cars = [];
 let recording = false, recordedEvents = [], replayFrames = null, replayIdx = 0, replayTimer = null;
-let floodCache = null;
+let floodCache = null, statusTick = 0;
 
 function makeCar(i) {
   const [x, y, d] = STARTS[i];
@@ -470,7 +534,9 @@ _CLS = _NS["CarController"]
   } catch (e) {
     codeStatus.textContent = "Adapter error: " + e.message;
     adapterState.type = "builtin";
-    carTypeSel.value = "builtin";
+    document.querySelectorAll('input[name=cartype]').forEach(r => {
+      r.checked = r.value === "builtin";
+    });
   }
 }
 function initControllers() {
@@ -566,6 +632,7 @@ function stopTimers() {
 function tick() {
   animT = Math.min(1, animT + 16 / currentStepDur);
   draw();
+  if (++statusTick % 6 === 0) updateStats();
   if (animT >= 1 && cars.every(c => c.finished)) {
     stopTimers(); btnRun.textContent = "Run"; updateStats();
   }
@@ -693,26 +760,50 @@ function draw() {
 }
 function shortestDelta(a, b) { return ((b - a + 540) % 360) - 180; }
 
-/* ============================ stats ============================ */
-function statusText(c) {
-  if (c.stopped) return "Retired";
-  if (c.finished) return "Goal Reached In " + ((c.finishStep ?? 0) * stepMs / 1000).toFixed(1) + " s";
-  if (running) return "Running";
-  return "Ready";
+/* ============================ status panel ============================ */
+const FACING = ["North", "East", "South", "West"];
+const MODE_TEXT = {
+  explore: "full quadrant exploration, then centre",
+  shortest: "shortest path to centre",
+};
+function adapterLabel() {
+  if (adapterState.type === "builtin") return "built-in logic";
+  return adapterState.name || "uploaded code";
+}
+function exploredCount(c) {
+  const z = ZONES[c.id], area = (z[1]-z[0]+1) * (z[3]-z[2]+1);
+  let vis = 0;
+  for (let y = z[2]; y <= z[3]; y++) for (let x = z[0]; x <= z[1]; x++)
+    if (c.visited.has(y*SIZE + x)) vis++;
+  return { vis, pct: Math.round(vis / area * 100) };
 }
 function updateStats() {
-  const tb = document.getElementById("stats");
-  while (tb.rows.length > 1) tb.deleteRow(1);
+  const body = document.getElementById("statusBody");
+  if (!body) return;
+  const elapsed = (totalSteps * stepMs / 1000).toFixed(1);
+  let html = `<b>Four-car competition (${MODE_TEXT[mode]}) — ${adapterLabel()}</b><br>`;
+  html += `Elapsed: ${elapsed} s<br><br>`;
   cars.forEach((c, i) => {
-    const z = ZONES[i], area = (z[1]-z[0]+1) * (z[3]-z[2]+1);
-    let vis = 0;
-    for (let y = z[2]; y <= z[3]; y++) for (let x = z[0]; x <= z[1]; x++)
-      if (c.visited.has(y*SIZE + x)) vis++;
-    const tr = tb.insertRow(-1);
-    tr.innerHTML = `<td><b style="color:${CAR_COLORS[i]}">${CAR_NAMES[i]}</b></td>` +
-      `<td>${Math.round(vis/area*100)} %</td><td>${c.moves}</td><td>${c.turns}</td>` +
-      `<td>${statusText(c)}</td>`;
+    const { vis, pct } = exploredCount(c);
+    const state = c.stopped ? "Retired"
+      : c.finished ? `Reached in ${((c.finishStep ?? 0) * stepMs / 1000).toFixed(1)} s`
+      : running ? "Running" : "Not Reached";
+    html += `Car ${i+1}: ${state}; Explored ${pct}% (${vis} cells); ` +
+            `Distance ${c.moves} cells; Turns ${c.turns}<br>`;
   });
+  html += "<br>";
+  cars.forEach((c, i) => {
+    const sens = d => {
+      const nx = c.x + DX[d], ny = c.y + DY[d];
+      return (walls[c.y][c.x][d] || !inb(nx, ny) || !inZone(i, nx, ny)) ? "WALL" : "open";
+    };
+    const state = c.stopped ? "Retired" : c.finished ? "Finished" : running ? "Running" : "Ready";
+    html += `<span class="carLine">Car ${i+1}: Column ${c.x+1}, Row ${c.y+1}; ` +
+            `Facing ${FACING[c.dir]}; ${state}</span><br>` +
+            `Sensors: front=${sens(c.dir)}, left=${sens((c.dir+3)%4)}, right=${sens((c.dir+1)%4)}<br>` +
+            `Distance: ${c.moves} cells; Turns: ${c.turns}<br><br>`;
+  });
+  body.innerHTML = html;
 }
 function recordFrame() {
   if (!recording) return;
@@ -727,8 +818,8 @@ function recordFrame() {
 const btnRun = document.getElementById("btnRun");
 const telemetry = document.getElementById("telemetry");
 const codeStatus = document.getElementById("codeStatus");
-const carTypeSel = document.getElementById("carType");
 const batteryEl = document.getElementById("battery");
+const hwStatusEl = document.getElementById("hwStatus");
 const hwLog = document.getElementById("hwLog");
 const speedLbl = document.getElementById("speedLbl");
 
@@ -828,6 +919,49 @@ function renderRecent() {
     el.appendChild(d);
   });
 }
+
+/* ---- Maze Tools tab: Save / Load / Export / Import ---- */
+document.getElementById("btnToolsSave").onclick = () => document.getElementById("btnSave").onclick();
+document.getElementById("btnExportMaze").onclick = () => {
+  const blob = new Blob([JSON.stringify({ name: mazeName, saved_at: new Date().toISOString(), walls })],
+                        { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = mazeName.replace(/[^\w]+/g, "_") + ".json";
+  a.click();
+  telemetry.textContent = `Exported ${mazeName}`;
+};
+document.getElementById("btnImportMaze").onclick = () => document.getElementById("fileMaze").click();
+document.getElementById("btnToolsLoad").onclick = () => {
+  const list = JSON.parse(localStorage.getItem("mouse_saves") || "[]");
+  const box = document.getElementById("modalList");
+  const modal = document.getElementById("modal");
+  document.getElementById("modalTitle").textContent = "Load maze";
+  document.getElementById("modalText").textContent = "";
+  box.innerHTML = "";
+  if (!list.length) {
+    box.textContent = "No saved mazes yet — use Save (middle column) or Import.";
+  } else {
+    list.forEach(entry => {
+      const b = document.createElement("button");
+      b.textContent = entry.name;
+      b.style.width = "100%";
+      b.style.margin = "6px 0";
+      b.onclick = () => {
+        walls = cloneMaze(entry.walls);
+        mazeOrigin = "custom";
+        mazeName = entry.name;
+        reset();
+        floodCache = null;
+        draw();
+        telemetry.textContent = `Loaded ${entry.name}`;
+        modal.classList.remove("open");
+      };
+      box.appendChild(b);
+    });
+  }
+  modal.classList.add("open");
+};
 document.getElementById("fileMaze").onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
   try {
@@ -862,6 +996,8 @@ document.getElementById("btnAnalyze").onclick = () => {
     }
   }
   const goalsReach = GOALS.every(([gx, gy]) => seen.has(cellKey(gx, gy)));
+  document.getElementById("modalTitle").textContent = "Maze analysis";
+  document.getElementById("modalList").innerHTML = "";
   document.getElementById("modalText").textContent =
     `Name: ${mazeName}\nSize: ${SIZE} x ${SIZE} cells\n` +
     `Open cells: ${open} / ${SIZE*SIZE}\nPassages: ${passages / 2}\n` +
@@ -887,6 +1023,7 @@ document.getElementById("btnSaveRec").onclick = () => {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob); a.download = "simulation_recording.json"; a.click();
 };
+document.getElementById("btnLoadRec").onclick = () => document.getElementById("fileRec").click();
 document.getElementById("fileRec").onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
   try { recordedEvents = JSON.parse(await f.text()); telemetry.textContent = `Recording loaded (${recordedEvents.length} frames)`; }
@@ -916,62 +1053,157 @@ const PRESETS = {
   carA: { path: "car_codes/ESP32-S3 Micromouse Adapter/CarController.py", name: "ESP32-S3 Micromouse" },
   carB: { path: "car_codes/TQD Micromouse JS2 Adapter/CarController.py", name: "TQD Micromouse JS2" },
 };
-carTypeSel.onchange = async e => {
-  const v = e.target.value;
-  if (v === "builtin") {
+const MODEL_SOURCES = { carA: null, carB: null, mycar: null };
+let uploadTarget = "mycar";
+const readyEl = key => document.getElementById(
+  key === "carA" ? "readyA" : key === "carB" ? "readyB" : "readyC");
+const setCarTypeRadio = key =>
+  document.querySelectorAll('input[name=cartype]').forEach(r => { r.checked = r.value === key; });
+
+document.querySelectorAll('input[name=cartype]').forEach(r => {
+  r.onchange = () => selectCarModel(r.value);
+});
+
+async function selectCarModel(key) {
+  if (key === "builtin") {
     adapterState = { type: "builtin", name: "built-in logic", source: null };
-    codeStatus.textContent = "Adapter: built-in logic"; reset(); return;
+    codeStatus.textContent = "Built-in scenarios — no uploaded code";
+    reset();
+    return;
   }
-  if (v === "uploaded") {
+  let src = MODEL_SOURCES[key];
+  if (!src && PRESETS[key]) {
+    readyEl(key).textContent = "Loading simulation adapter…";
+    try {
+      const res = await fetch(encodeURI(PRESETS[key].path));
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      src = await res.text();
+      MODEL_SOURCES[key] = src;
+    } catch (e) {
+      readyEl(key).textContent =
+        "Ready: the simulation adapter needs a connection — upload the code folder to run it.";
+      setCarTypeRadio("builtin");
+      adapterState = { type: "builtin", name: "built-in logic", source: null };
+      reset();
+      return;
+    }
+  }
+  if (!src) {
+    readyEl(key).textContent = "Ready: (Upload Code File)";
+    uploadTarget = key;
     document.getElementById("fileCode").click();
     return;
   }
-  const preset = PRESETS[v];
-  codeStatus.textContent = `Loading ${preset.name} adapter…`;
-  try {
-    const r = await fetch(encodeURI(preset.path));
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    adapterState.type = v;
-    await installAdapterSource(await r.text(), preset.name);
-  } catch (err) {
-    codeStatus.textContent = "Could not load adapter (" + err.message + ") — run from the hosted site or upload the folder instead.";
-    carTypeSel.value = "builtin";
-    adapterState = { type: "builtin", name: "built-in logic", source: null };
-  }
-};
-document.getElementById("btnUpload").onclick = () => document.getElementById("fileCode").click();
+  const name = key === "mycar"
+    ? (document.getElementById("nameC").value.trim() || "My car")
+    : PRESETS[key].name;
+  adapterState.type = key;
+  await installAdapterSource(src, name);
+  readyEl(key).textContent = "Ready: " + name + " — adapter loaded";
+}
+
+[["carA", "upA"], ["carB", "upB"], ["mycar", "upC"]].forEach(([key, btn]) => {
+  document.getElementById(btn).onclick = () => {
+    uploadTarget = key;
+    document.getElementById("fileCode").click();
+  };
+});
+
 document.getElementById("fileCode").onchange = async e => {
   const files = [...e.target.files];
-  const ctrl = files.find(f => f.name === "CarController.py") || files.find(f => f.name.toLowerCase() === "carcontroller.py");
-  if (!ctrl) { codeStatus.textContent = "No CarController.py found in that folder"; return; }
+  const ctrl = files.find(f => f.name.toLowerCase() === "carcontroller.py");
+  const key = uploadTarget || "mycar";
+  if (!ctrl) { readyEl(key).textContent = "No CarController.py found in that folder"; return; }
   const folder = (ctrl.webkitRelativePath || "").split("/")[0] || "Uploaded car";
-  adapterState.type = "uploaded";
-  await installAdapterSource(await ctrl.text(), folder);
+  MODEL_SOURCES[key] = await ctrl.text();
+  if (key === "mycar") document.getElementById("nameC").value = folder;
+  setCarTypeRadio(key);
+  await selectCarModel(key);
+  readyEl(key).textContent = "Ready: " + folder + " — adapter uploaded";
 };
 
 /* ---------- hardware (Web Serial) ---------- */
-let hwPort = null, hwReader = null, hwReading = false;
-const hwStatusLine = text => { hwLogLine(text); };
+let hwPort = null, hwReader = null, hwReading = false, hwPortList = [];
+const HW_BAUD = 115200;
 function hwLogLine(t) {
   hwLog.textContent += (hwLog.textContent ? "\n" : "") + t;
   hwLog.scrollTop = hwLog.scrollHeight;
 }
-async function hwPair() {
+function portLabel(p, i) {
+  const info = (p.getInfo && p.getInfo()) || {};
+  if (info.usbVendorId) {
+    return "USB " + info.usbVendorId.toString(16).toUpperCase() + ":" +
+           (info.usbProductId || 0).toString(16).toUpperCase();
+  }
+  return "Serial port " + (i + 1);
+}
+document.getElementById("btnScan").onclick = async () => {
   if (!("serial" in navigator)) {
-    batteryEl.textContent = "Battery: Web Serial not supported (use Chrome/Edge over https)";
+    hwStatusEl.textContent = "Web Serial not supported — use Chrome or Edge on https";
     return;
   }
   try {
-    hwPort = await navigator.serial.requestPort();
-    const baud = parseInt(document.getElementById("baud").value, 10) || 115200;
-    await hwPort.open({ baudRate: baud });
-    document.getElementById("btnUnpair").disabled = false;
-    document.getElementById("btnPing").disabled = false;
-    hwLogLine(`Paired at ${baud} baud`);
-    hwReading = true;
-    readLoop();
+    hwPortList = await navigator.serial.getPorts();
+    if (!hwPortList.length) hwPortList = [await navigator.serial.requestPort()];
+    const sel = document.getElementById("hwPorts");
+    sel.innerHTML = "";
+    hwPortList.forEach((p, i) => {
+      const o = document.createElement("option");
+      o.value = String(i);
+      o.textContent = portLabel(p, i);
+      sel.appendChild(o);
+    });
+    hwStatusEl.textContent = hwPortList.length + " port(s) found — select and connect";
+    hwLogLine(hwPortList.length + " port(s) found");
   } catch (e) {
-    hwLogLine("Pair failed: " + e.message);
+    hwStatusEl.textContent = "Scan cancelled or failed";
+    hwLogLine("Scan: " + e.message);
+  }
+};
+document.getElementById("btnPair").onclick = async () => {
+  const btn = document.getElementById("btnPair");
+  if (hwPort) { await hwDisconnect(); return; }
+  if (!("serial" in navigator)) {
+    hwStatusEl.textContent = "Web Serial not supported — use Chrome or Edge on https";
+    return;
+  }
+  try {
+    const idx = parseInt(document.getElementById("hwPorts").value, 10);
+    let port = hwPortList[idx];
+    if (!port) port = await navigator.serial.requestPort();
+    await port.open({ baudRate: HW_BAUD });
+    hwPort = port;
+    hwReading = true;
+    btn.textContent = "Disconnect";
+    hwStatusEl.textContent = "Paired at " + HW_BAUD + " baud";
+    batteryEl.textContent = "Battery: Connected — waiting for telemetry";
+    hwLogLine("Paired at " + HW_BAUD + " baud");
+    readLoop();
+    pingCar();
+  } catch (e) {
+    hwStatusEl.textContent = "Connect failed: " + e.message;
+    hwLogLine("Connect failed: " + e.message);
+  }
+};
+async function hwDisconnect() {
+  hwReading = false;
+  try { if (hwReader) await hwReader.cancel(); } catch {}
+  try { if (hwPort) await hwPort.close(); } catch {}
+  hwPort = null;
+  document.getElementById("btnPair").textContent = "Connect";
+  hwStatusEl.textContent = "Not paired — scan ports and connect";
+  batteryEl.textContent = "Battery: Not Connected";
+  hwLogLine("Disconnected");
+}
+async function pingCar() {
+  if (!hwPort || !hwPort.writable) return;
+  try {
+    const w = hwPort.writable.getWriter();
+    await w.write(new TextEncoder().encode("BAT\n"));
+    w.releaseLock();
+    hwLogLine("> BAT");
+  } catch (e) {
+    hwLogLine("Write failed: " + e.message);
   }
 }
 async function readLoop() {
@@ -1001,7 +1233,10 @@ function handleHwLine(line) {
   let volts = null;
   try {
     const j = JSON.parse(line);
-    if (typeof j.name === "string") hwLogLine("Car: " + j.name);
+    if (typeof j.name === "string") {
+      hwStatusEl.textContent = "Paired: " + j.name;
+      hwLogLine("Car: " + j.name);
+    }
     if (typeof j.voltage === "number") volts = j.voltage > 100 ? j.voltage / 1000 : j.voltage;
   } catch {}
   const m = line.match(/BAT:\s*([\d.]+)\s*(V|%)?/i);
@@ -1017,24 +1252,7 @@ function handleHwLine(line) {
       (volts > 8.2 ? "Fully Charged" : volts < 6.8 ? "Needs Charging" : "Partly Charged");
   }
 }
-document.getElementById("btnPair").onclick = hwPair;
-document.getElementById("btnPing").onclick = async () => {
-  if (!hwPort || !hwPort.writable) return;
-  const w = hwPort.writable.getWriter();
-  await w.write(new TextEncoder().encode("BAT\n"));
-  w.releaseLock();
-  hwLogLine("> BAT");
-};
-document.getElementById("btnUnpair").onclick = async () => {
-  hwReading = false;
-  try { if (hwReader) await hwReader.cancel(); } catch {}
-  try { if (hwPort) await hwPort.close(); } catch {}
-  hwPort = null;
-  document.getElementById("btnUnpair").disabled = true;
-  document.getElementById("btnPing").disabled = true;
-  batteryEl.textContent = "Battery: Not Connected";
-  hwLogLine("Disconnected");
-};
+
 
 /* ---------- keyboard ---------- */
 document.addEventListener("keydown", e => {
@@ -1085,6 +1303,11 @@ function toggleWall(x, y, d) {
 /* ---------- boot ---------- */
 renderRecent();
 reset();
+const wantedTab = ((typeof location !== "undefined" && location.hash) || "").replace("#", "");
+if (wantedTab) {
+  const tabBtn = [...document.querySelectorAll(".tabs button")].find(b => b.dataset.tab === wantedTab);
+  if (tabBtn) tabBtn.click();
+}
 </script>
 </body>
 </html>
