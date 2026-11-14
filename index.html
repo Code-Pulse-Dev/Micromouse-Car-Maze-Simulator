@@ -83,6 +83,14 @@
     .mid { width:100%; max-width:560px; }
     .right { max-width:none; }
   }
+  /* phone held sideways (the view the rotate hint leads to): the maze is
+     sized to the screen height and the controls sit beside it */
+  @media (max-width: 1020px) and (orientation: landscape) {
+    .layout { align-items:flex-start; }
+    .canvasWrap { width:auto; height:calc(100vh - 30px); }
+    #cv { width:auto; height:100%; max-width:calc(100vw - 320px); }
+    .mid { width:236px; max-width:none; }
+  }
   @media (max-width: 480px) {
     .layout { padding:8px; gap:10px; }
     .pane { padding:10px; }
@@ -2105,6 +2113,12 @@ function showFinishedModal() {
    small viewport height), an overlay asks the user to turn the device to
    portrait. The moment they rotate, the overlay disappears on its own and
    every panel is laid out for the portrait screen. */
+/* ---------- turn-sideways hint for phones and small tablets ----------
+   When the page is opened on a touch device held upright (portrait, width
+   under 560 px), an overlay asks the user to turn the device sideways
+   (landscape) for a better view. The moment they rotate, the overlay
+   disappears on its own and the landscape layout takes over: the maze
+   sized to the screen height with the controls beside it. */
 const rotateOverlay = document.createElement("div");
 rotateOverlay.style.cssText = "display:none;position:fixed;inset:0;z-index:90;" +
   "background:rgba(6,12,24,.96);align-items:center;justify-content:center;text-align:center";
@@ -2115,14 +2129,14 @@ rotateOverlay.innerHTML =
   '<div style="position:absolute;left:50%;bottom:7px;width:14px;height:2px;background:#2dd4bf;' +
   'transform:translateX(-50%);border-radius:2px"></div></div>' +
   '<div style="font:600 17px \'Segoe UI\',sans-serif;color:#7fe7d4;margin-bottom:10px">' +
-  'Turn your device to portrait</div>' +
+  'Turn your phone sideways</div>' +
   '<div style="font:14px \'Segoe UI\',sans-serif;color:#dbe4f3;line-height:1.5;margin-bottom:16px">' +
-  'You are on a phone or tablet held sideways. Rotate it upright (portrait) for the best view — ' +
+  'You are holding your phone upright. Rotate it sideways (landscape) for the best view — ' +
   'the maze and every panel will then fit your screen automatically.' +
   '</div>' +
   '<button id="rotSkip" style="background:transparent;color:#9db4c5;border:1px solid #2a3c58;' +
   'border-radius:6px;padding:7px 16px;font:600 13px \'Segoe UI\',sans-serif;cursor:pointer">' +
-  'Continue in landscape anyway</button>' +
+  'Continue in portrait anyway</button>' +
   '</div>';
 document.body.appendChild(rotateOverlay);
 const rotStyle = document.createElement("style");
@@ -2134,13 +2148,17 @@ let rotateDismissed = false;
 document.getElementById("rotSkip").onclick = () => {
   rotateDismissed = true;
   rotateOverlay.style.display = "none";
-};function updateRotateHint() {
+};
+function updateRotateHint() {
   const touch = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) ||
     "ontouchstart" in window;
-  const landscape = window.innerWidth > window.innerHeight;
-  const shortSide = Math.min(window.innerWidth, window.innerHeight);
-  // phones / small tablets held sideways: short side ~ below 560 px
-  const show = touch && landscape && shortSide < 560 && !rotateDismissed;
+  const portrait = window.innerHeight > window.innerWidth;
+  const width = window.innerWidth;
+  // phones / small tablets held upright: width ~ below 560 px.
+  // (A keyboard opening on a portrait phone shrinks the height, which
+  // naturally suppresses the hint - it only shows for a truly upright,
+  // untouched screen.)
+  const show = touch && portrait && width < 560 && !rotateDismissed;
   rotateOverlay.style.display = show ? "flex" : "none";
 }
 window.addEventListener("resize", updateRotateHint);
