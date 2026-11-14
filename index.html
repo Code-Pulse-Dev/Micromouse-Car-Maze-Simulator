@@ -264,7 +264,9 @@ const REAL_EDITS_INIT = {"13,10,1": false, "13,11,2": false, "15,4,2": true};
 const SIZE = 16;
 const DX = [0, 1, 0, -1], DY = [-1, 0, 1, 0], OPP = [2, 3, 0, 1];
 const GOALS = [[7,7],[8,7],[7,8],[8,8]];
-const STARTS = [[0,0,1],[15,0,2],[0,15,3],[15,15,0]];
+// desktop CAR_STARTS: car 1 faces east, car 2 south, car 3 north (up),
+// car 4 north (up) - both bottom cars start facing into the maze
+const STARTS = [[0,0,1],[15,0,2],[0,15,0],[15,15,0]];
 const ZONES = [[0,7,0,7],[8,15,0,7],[0,7,8,15],[8,15,8,15]];
 const GOALS_CAR = [[7,7],[8,7],[7,8],[8,8]];
 const CAR_COLORS = ["#ff6b6b","#4dabf7","#69db7c","#cc8bff"];
@@ -820,7 +822,9 @@ function step() {
     if (onOwnGoal) {
       // the car retires the moment it stands on its own centre goal -
       // no bubbling around the centre, it stops for good
-      c.finished = true; c.finishStep = totalSteps; continue;
+      c.finished = true; c.finishStep = totalSteps;
+      c.px = c.x; c.py = c.y; c.pang = c.ang;
+      continue;
     }
     sense(c);
     let acted;
@@ -940,7 +944,7 @@ function floodMap(c) {
 const ease = t => t*t*(3 - 2*t);            // smoothstep, same glide as the desktop
 /* Pixel-for-pixel port of the desktop _draw_car: teal board, four wheels,
    rear display, MCU module and three range-sensor beams on the nose. */
-function drawCarBody(X, Y, angDeg, color, motion, phase, blocked, label) {
+function drawCarBody(X, Y, angDeg, color, motion, phase, blocked, label, done) {
   const a = angDeg * Math.PI / 180;
   const pt = (lat, fwd) => [
     X + fwd * Math.cos(a) - lat * Math.sin(a),
@@ -977,12 +981,23 @@ function drawCarBody(X, Y, angDeg, color, motion, phase, blocked, label) {
   } else if (motion === "turn") {
     spread = 8 + 4 * phase; reach = 24; width = 2; dash = [3, 2];
   }
-  ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dash);
-  for (const lat of [-spread, 0, spread]) {
-    const [x1, y1] = pt(lat, 13), [x2, y2] = pt(lat * 2.2, 13 + reach);
-    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  if (!done) {
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dash);
+    for (const lat of [-spread, 0, spread]) {
+      const [x1, y1] = pt(lat, 13), [x2, y2] = pt(lat * 2.2, 13 + reach);
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  } else {
+    // parked: beams off, a green tick above the car - it has finished
+    ctx.beginPath();
+    ctx.arc(X, Y - 14, 6, 0, Math.PI * 2);
+    ctx.fillStyle = "#0f2a1e"; ctx.fill();
+    ctx.strokeStyle = "#69db7c"; ctx.lineWidth = 1.4; ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(X - 3, Y - 14); ctx.lineTo(X - 0.7, Y - 11.7); ctx.lineTo(X + 3.2, Y - 16.4);
+    ctx.strokeStyle = "#69db7c"; ctx.lineWidth = 1.8; ctx.lineCap = "round"; ctx.stroke();
   }
-  ctx.setLineDash([]);
   ctx.fillStyle = "#dbe4f3"; ctx.font = "bold 10px 'Segoe UI', sans-serif";
   ctx.textAlign = "center";
   ctx.fillText(label, X, Y + 4);
@@ -1075,16 +1090,31 @@ function draw() {
     }
   }
 
+  // checkered flag on the centre cell of every car that has already arrived
   for (const c of cars) {
+    if (!c.finished) continue;
+    const g = GOALS_CAR[c.id];
+    const L = PAD + g[0]*CELL, T = PAD + g[1]*CELL;
+    const s = 5;
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+      ctx.fillStyle = (i + j) % 2 ? "#e6edf7" : "#0b1324";
+      ctx.fillRect(L + 4 + i*s, T + 4 + j*s, s, s);
+    }
+    ctx.strokeStyle = CAR_COLORS[c.id]; ctx.lineWidth = 1;
+    ctx.strokeRect(L + 3.5, T + 3.5, 3*s + 1, 3*s + 1);
+  }
+
+  for (const c of cars) {
+    if (c.finished) { c.px = c.x; c.py = c.y; c.pang = c.ang; }
     const t = ease(animT);
-    const moving = c.px !== c.x || c.py !== c.y;
-    const turning = Math.abs(shortestDelta(c.pang, c.ang)) > 0.5;
+    const moving = !c.finished && (c.px !== c.x || c.py !== c.y);
+    const turning = !c.finished && Math.abs(shortestDelta(c.pang, c.ang)) > 0.5;
     const motion = moving ? "move" : turning ? "turn" : "idle";
     const fx = c.px + (c.x - c.px) * t, fy = c.py + (c.y - c.py) * t;
     const ang = c.pang + shortestDelta(c.pang, c.ang) * t;
     const X = PAD + fx * CELL + CELL / 2, Y = PAD + fy * CELL + CELL / 2;
     drawCarBody(X, Y, ang, CAR_COLORS[c.id], motion, t,
-                walls[c.y][c.x][c.dir], String(c.id + 1));
+                walls[c.y][c.x][c.dir], String(c.id + 1), c.finished);
   }
 }
 function shortestDelta(a, b) { return ((b - a + 540) % 360) - 180; }
@@ -2025,7 +2055,7 @@ function showFinishedModal() {
       `Distance ${c.moves} cells; Turns ${c.turns}`).join("\n");
   finishModal.style.display = "flex";
 }
-document.getElementById("buildTag").textContent = "build 2026-11-15.4";
+document.getElementById("buildTag").textContent = "build 2026-11-15.5";
 </script>
 </body>
 </html>
