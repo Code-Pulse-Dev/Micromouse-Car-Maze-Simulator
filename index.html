@@ -1743,10 +1743,12 @@ async function fetchTimeout(url, opts = {}, ms = 15000) {
 async function ghRaw(owner, repo, path) {
   const enc = (path || "").split("/").filter(Boolean).map(encodeURIComponent).join("/");
   const errs = [];
-  // 1. raw.githubusercontent.com - fast where it works
+  // 1. raw.githubusercontent.com - fast where it works; the unique query
+  //    makes every upload fetch the current file instead of a cached copy
   try {
     const res = await fetchTimeout("https://raw.githubusercontent.com/" +
-      encodeURIComponent(owner) + "/" + encodeURIComponent(repo) + "/" + enc);
+      encodeURIComponent(owner) + "/" + encodeURIComponent(repo) + "/" + enc +
+      "?t=" + Date.now());
     if (res.ok) return await res.text();
     errs.push("raw HTTP " + res.status);
   } catch (e) {

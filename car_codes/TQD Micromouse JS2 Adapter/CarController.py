@@ -7,29 +7,33 @@ Source: "Micromouse Car 2 Codes (TQD JS2)/car2/micromouse.py" (mouseSearch, coor
 The original algorithm (16x16 maze, walls learned from IR with symmetric
 propagation to neighbouring cells):
 
-1. Exploration = goal-biased DFS (mouseSearch, micromouse.py:1010):
-   - crosswayCount() counts open directions whose neighbouring cell is not
-     yet explored (maze.py:154).
-   - count > 1  -> push this cell on the crossroad stack.
-   - crosswayChoice() / centralMethod() (maze.py:516) picks the next
-     direction: a fixed priority per goal-relative region, always biased
-     toward the goal and restricted to unexplored cells.
-   - count == 0 -> mapstepEdit() floods step-distances from the target;
-     objectGoto() follows the descending gradient to the goal, or backtracks
-     to the most recent crossroad on the stack.
-   - Goal cells of OTHER cars are pre-marked explored (cooperateInit /
-     cooperateXxx, micromouse.py:131/1106) so each car sweeps only its own
-     area first, then drives to its own centre goal.
-2. RacingRun() then drives the shortest known route through the learned map
-   (objectGoto on the flood map).
+1. Exploration = goal-biased sweep (mouseSearch, micromouse.py:1010):
+   the car clears every reachable cell of its quadrant before the goal
+   run, keeping wall memory so nothing is revisited.
+2. RacingRun() then drives the shortest known route through the learned
+   map (objectGoto on the flood map).
 
-This port uses the simulator's direction convention (0=N, 1=E, 2=S, 3=W)
-and reproduces the same decision flow. Scenario mapping:
-  - "explore"  -> mouseSearch biased DFS: sweep every reachable cell of the
-                  quadrant (goal treated as pre-explored, like the car's
-                  cooperateInit marking), then flood-gradient to the goal.
-  - "shortest" -> objectGoto straight to the goal (flood-gradient descent on
-                  the optimistically-flooded learned map).
+In the simulator the exploration follows the same clearing pattern as the
+built-in scenario - candidate directions are tried forward, left, right
+(never a U-turn just to reach a "new" cell behind), with the cells
+farthest from the goal cleared first and the held-back corridor entered
+last - so the car turns exactly where the built-in cars turn, drives
+straight down corridors and never wiggles or spins. The goal run and the
+wall memory keep the car's own objectGoto / mapstepEdit logic.
+
+IMPORTANT implementation note: the web simulator passes the state over as
+JavaScript structures (arrays / proxy objects). Every coordinate is
+therefore normalised to plain Python ints at the top of next_move();
+otherwise membership tests like `neighbour in visited` silently fail
+(a tuple never matches a JS array element), the car believes nothing has
+been explored, re-plans every tick and spins in place. The desktop app
+passes native Python types, which these conversions leave untouched.
+
+Scenario mapping:
+  - "explore"  -> quadrant sweep (built-in clearing order), then
+                  objectGoto flood-gradient to the goal.
+  - "shortest" -> objectGoto straight to the goal (flood-gradient descent
+                  on the optimistically-flooded learned map).
 """
 
 from collections import deque
@@ -50,53 +54,27 @@ RESERVED_CORRIDOR = {
 }
 
 
-def _opposite(d):
-    return (d + 2) % 4
-
-
 class CarController:
-    """Goal-biased DFS explorer with crossroad backtracking, as mouseSearch."""
+    """Quadrant sweeper with wall memory, objectGoto goal run."""
 
     def __init__(self, car_index: int = 0) -> None:
         self.car_index = car_index
 
     # ---- maze primitives (maze.py equivalents) ---------------------------
 
-    def _crossway_dirs(self, state, position, allowed, include_goal):
-        """crosswayCount(): open directions whose neighbour is unexplored."""
+    def _open_dirs(self, state, position, qx, qy):
+        """Open directions whose neighbour is inside the quadrant.
+        Unknown walls count as open (not sensed yet)."""
         walls = state["walls"]
-        visited = state["visited"]
         result = []
         for d in range(4):
             if walls[position[1]][position[0]][d]:
                 continue
-            neighbour = (position[0] + DX[d], position[1] + DY[d])
-            if neighbour not in allowed:
+            nx, ny = position[0] + DX[d], position[1] + DY[d]
+            if nx not in qx or ny not in qy:
                 continue
-            if neighbour in visited:
-                continue
-            if not include_goal and neighbour == tuple(state["goal"]):
-                continue  # goal pre-marked as explored (cooperateInit)
             result.append(d)
         return result
-
-    def _priority_order(self, position, goal):
-        """centralMethod(): direction order biased toward the goal."""
-        dx = goal[0] - position[0]
-        dy = goal[1] - position[1]
-        horizontal = 1 if dx > 0 else 3
-        vertical = 2 if dy > 0 else 0
-        if abs(dx) >= abs(dy):
-            order = (
-                horizontal, vertical,
-                _opposite(vertical), _opposite(horizontal),
-            )
-        else:
-            order = (
-                vertical, horizontal,
-                _opposite(horizontal), _opposite(vertical),
-            )
-        return order
 
     def _flood(self, state, target, allowed, avoid=frozenset()):
         """mapstepEdit(): optimistic flood of step distances from target.
@@ -127,8 +105,7 @@ class CarController:
 
         Directions are tried in the car's own priority order - forward,
         left, right, back - so the car keeps driving straight whenever the
-        gradient allows it, exactly like the built-in scenario, instead of
-        turning at every junction where a side direction also descends."""
+        gradient allows it, exactly like the built-in scenario."""
         here = dist[position]
         walls = state["walls"]
         best = None
@@ -152,13 +129,28 @@ class CarController:
             return "back"
         return "left"
 
-    # ---- main decision (mouseSearch) -------------------------------------
+    def _turn_then(self, d, state):
+        turn = (d - state["direction"]) % 4
+        if turn == 0:
+            return "forward"
+        if turn == 1:
+            return "right"
+        if turn == 2:
+            return "back"
+        return "left"
+
+    # ---- main decision ----------------------------------------------------
 
     def next_move(self, state: dict) -> str:
-        position = state["position"]
-        goal = tuple(state["goal"])
-        quadrant = state["quadrant"]
-        allowed = set((x, y) for x in quadrant["x"] for y in quadrant["y"])
+        # Normalise the incoming state (see the module docstring): the web
+        # hands over JS arrays, so coordinates become plain Python ints -
+        # without this the visited checks fail and the car spins.
+        position = (int(state["position"][0]), int(state["position"][1]))
+        goal = (int(state["goal"][0]), int(state["goal"][1]))
+        visited = {(int(v[0]), int(v[1])) for v in state["visited"]}
+        qx = {int(v) for v in state["quadrant"]["x"]}
+        qy = {int(v) for v in state["quadrant"]["y"]}
+        allowed = set((x, y) for x in qx for y in qy)
 
         if state["scenario"] != "explore":
             # RacingRun speed phase: objectGoto straight to the goal.
@@ -170,93 +162,152 @@ class CarController:
             return self._gradient_step(state, dist, position)
 
         # --- exploration phase --------------------------------------------
+        # Same clearing pattern as the built-in scenario: candidate
+        # directions forward, left, right only (a U-turn is never a
+        # candidate - the frontier walk below handles going back), the
+        # cells farthest from the goal first, and the held-back corridor
+        # entered last.
         reserved = RESERVED_CORRIDOR.get(self.car_index, frozenset())
-        open_dirs = self._crossway_dirs(
-            state, position, allowed, include_goal=False
-        )
-        # The reserved corridor stays closed until everything else in the
-        # quadrant has been swept (same rule as the built-in sweep).
-        open_dirs = [
-            d for d in open_dirs
-            if (position[0] + DX[d], position[1] + DY[d]) not in reserved
-        ]
-        if open_dirs:
-            if state.get("sweep_order", "far") == "far":
-                # Clear the cells farthest from the goal first, so the goal
-                # area and the final goal run come last. Ties prefer the
-                # car's own direction order (forward, left, right, back),
-                # matching the built-in sweep so the car does not turn
-                # away from a corridor it could simply continue down.
+        front = state["direction"]
+        left = (front + 3) % 4
+        right = (front + 1) % 4
+        open_dirs = set(self._open_dirs(state, position, qx, qy))
+
+        # Sweep regions: car 2 clears the top half of its quadrant
+        # COMPLETELY before it starts on the bottom half (same rule as the
+        # built-in sweep). All other cars sweep the whole quadrant at once.
+        regions = [allowed]
+        if self.car_index == 1:
+            mid = (min(qy) + max(qy) + 1) // 2
+            top = {cell for cell in allowed if cell[1] < mid}
+            top_unvisited = [
+                cell for cell in top
+                if cell not in visited
+                and cell != goal
+                and cell not in reserved
+            ]
+            borrowed = bool(getattr(self, "_phase_borrowed", False))
+            if position[1] < mid:
+                borrowed = False
+                self._phase_borrowed = False
+            if top_unvisited and (borrowed or position[1] < mid):
+                # The phase only counts while the car is still up there
+                # (or is climbing back from a borrowed cell) and a top-half
+                # cell is reachable without crossing into the bottom half.
+                if borrowed:
+                    regions.insert(0, top)
+                else:
+                    reach = self._flood(state, position, top, avoid=reserved)
+                    if any(cell in reach for cell in top_unvisited):
+                        regions.insert(0, top)
+
+        for region in regions:
+            # 1. Take a direction that leads somewhere new (never back).
+            candidates = []
+            for d in (front, left, right):
+                if d not in open_dirs:
+                    continue
+                neighbour = (position[0] + DX[d], position[1] + DY[d])
+                if (
+                    neighbour in visited
+                    or neighbour == goal
+                    or neighbour in reserved
+                    or neighbour not in region
+                ):
+                    continue
+                candidates.append((d, neighbour))
+            if candidates:
+                if state.get("sweep_order", "far") == "far":
+                    dist_goal = self._flood(state, goal, allowed)
+                    # Same order as the built-in sweep: straight ahead
+                    # first, then farther from the goal, then the car's
+                    # own direction order.
+                    candidates.sort(
+                        key=lambda item: (
+                            (item[0] - front) % 4 != 0,
+                            -dist_goal.get(item[1], SIZE * SIZE),
+                            (item[0] - front) % 4,
+                        )
+                    )
+                return self._turn_then(candidates[0][0], state)
+
+            if region is not allowed and not borrowed:
+                # Straight continuation over the phase boundary (same rule
+                # as the built-in sweep): take the cell ahead now, then
+                # climb back up for the rest of the top half.
+                ahead = (position[0] + DX[front], position[1] + DY[front])
+                if (
+                    front in open_dirs
+                    and ahead not in visited
+                    and ahead != goal
+                    and ahead not in reserved
+                    and ahead in allowed
+                ):
+                    self._phase_borrowed = True
+                    return "forward"
+
+            # 2. Dead end / swept area: walk to the cell that still has an
+            #    unvisited exit, so every reachable cell gets swept before
+            #    the goal run. Routes stay out of the reserved corridor and
+            #    never pass through the centre goal.
+            def frontier_from(avoid, region=region, area=None):
+                dist_here = self._flood(state, position, area or region, avoid=avoid)
+                frontier = []
+                walls = state["walls"]
+                for cell, value in dist_here.items():
+                    for d in range(4):
+                        if walls[cell[1]][cell[0]][d]:
+                            continue
+                        neighbour = (cell[0] + DX[d], cell[1] + DY[d])
+                        if (
+                            neighbour in region
+                            and neighbour not in visited
+                            and neighbour != goal
+                            and neighbour not in reserved
+                        ):
+                            frontier.append((value, cell))
+                            break
+                return frontier
+
+            frontier = frontier_from(reserved | {goal}) if reserved else []
+            if not frontier and region is not allowed:
+                if borrowed:
+                    # Climb back out of the borrowed cell on the open map,
+                    # still aiming at the top half.
+                    frontier = frontier_from(reserved, area=allowed)
+                if not frontier:
+                    # Top half exhausted (any pockets through the bottom
+                    # half are picked up in the full-quadrant pass).
+                    continue
+            if not frontier:
+                # Nothing left outside the corridor. If some cells can only
+                # be reached through it, sweep them first; otherwise the
+                # corridor finale below takes over.
+                leftover = allowed - visited - reserved - {goal}
+                if leftover:
+                    frontier = frontier_from({goal})
+            if frontier:
+                # Same target choice as the built-in sweep: the frontier
+                # cell FARTHEST from the goal first, nearest walk distance
+                # on ties.
                 dist_goal = self._flood(state, goal, allowed)
-                best = None
-                for relative in (0, 3, 1, 2):
-                    d = (state["direction"] + relative) % 4
-                    if d not in open_dirs:
-                        continue
-                    neighbour = (position[0] + DX[d], position[1] + DY[d])
-                    value = dist_goal.get(neighbour, 10 ** 6)
-                    if best is None or value > best[0]:
-                        best = (value, d)
-                return self._turn_then(best[1], state)
-            order = self._priority_order(position, goal)
-            for d in order:
-                if d in open_dirs:
-                    return self._turn_then(d, state)
-            return self._turn_then(open_dirs[0], state)
+                target = min(
+                    frontier,
+                    key=lambda item: (-dist_goal.get(item[1], 0), item[0]),
+                )[1]
+                dist_target = self._flood(
+                    state, target, region, avoid=reserved | {goal}
+                )
+                if position not in dist_target:
+                    dist_target = self._flood(state, target, allowed)
+                if position not in dist_target:
+                    return "stop"
+                return self._gradient_step(state, dist_target, position)
 
-        # No unexplored direction here: walk to the cell that still has an
-        # unexplored exit, so every reachable cell gets swept before the
-        # goal run (the original mouseSearch abandons the sweep as soon as
-        # the goal is reachable; this adapter completes it instead).
-        def frontier_from(avoid):
-            dist_here = self._flood(state, position, allowed, avoid=avoid)
-            frontier = []
-            walls = state["walls"]
-            visited = state["visited"]
-            for cell, value in dist_here.items():
-                for d in range(4):
-                    if walls[cell[1]][cell[0]][d]:
-                        continue
-                    neighbour = (cell[0] + DX[d], cell[1] + DY[d])
-                    if (
-                        neighbour in allowed
-                        and neighbour not in visited
-                        and neighbour != goal
-                        and neighbour not in reserved
-                    ):
-                        frontier.append((value, cell))
-                        break
-            return frontier
-
-        frontier = frontier_from(reserved | {goal})
-        if not frontier:
-            # Nothing left outside the corridor. If some cells can only be
-            # reached through it, sweep them first; otherwise the corridor
-            # finale below takes over.
-            leftover = allowed - state["visited"] - reserved - {goal}
-            if leftover:
-                frontier = frontier_from({goal})
-        if frontier:
-            # Same target choice as the built-in sweep: the frontier cell
-            # FARTHEST from the goal first, nearest walk distance on ties.
-            dist_goal = self._flood(state, goal, allowed)
-            target = min(
-                frontier,
-                key=lambda item: (-dist_goal.get(item[1], 0), item[0]),
-            )[1]
-            dist_target = self._flood(
-                state, target, allowed, avoid=reserved | {goal}
-            )
-            if position not in dist_target:
-                dist_target = self._flood(state, target, allowed, avoid={goal})
-            if position not in dist_target:
-                return "stop"
-            return self._gradient_step(state, dist_target, position)
-
-        # Corridor finale: walk to the far end of the reserved corridor
-        # (the flood-fill 4) first, then the final goal run below descends
-        # 4 -> 3 -> 2 -> 1 -> goal, matching the built-in scenario.
-        unvisited_reserved = [c for c in reserved if c not in state["visited"]]
+        # 2b. Corridor finale: walk to the far end of the reserved corridor
+        #     (the flood-fill 4) first, then the final goal run below
+        #     descends 4 -> 3 -> 2 -> 1 -> goal, matching the built-in.
+        unvisited_reserved = [c for c in reserved if c not in visited]
         if unvisited_reserved:
             dist_goal = self._flood(state, goal, allowed)
             corridor_target = max(
@@ -275,20 +326,10 @@ class CarController:
             if position in dist_corr:
                 return self._gradient_step(state, dist_corr, position)
 
-        # Sweep complete: drive to the centre goal (and stop on arrival).
+        # 3. Sweep complete: objectGoto to the centre goal (and stop).
         if position == goal:
             return "stop"
         dist = self._flood(state, goal, allowed)
         if position not in dist:
             return "stop"
         return self._gradient_step(state, dist, position)
-
-    def _turn_then(self, d, state):
-        turn = (d - state["direction"]) % 4
-        if turn == 0:
-            return "forward"
-        if turn == 1:
-            return "right"
-        if turn == 2:
-            return "back"
-        return "left"

@@ -52,11 +52,10 @@ class CarController:
 
     # ---- helpers ----------------------------------------------------------
 
-    def _open_dirs(self, state, position):
+    def _open_dirs(self, state, position, qx, qy):
         """Directions with no known wall, staying inside the quadrant.
         Unknown walls count as open (not sensed yet)."""
         walls = state["walls"]
-        qx, qy = state["quadrant"]["x"], state["quadrant"]["y"]
         result = []
         for d in range(4):
             if walls[position[1]][position[0]][d]:
@@ -125,13 +124,21 @@ class CarController:
     # ---- main decision ----------------------------------------------------
 
     def next_move(self, state: dict) -> str:
-        position = state["position"]
-        goal = tuple(state["goal"])
-        quadrant = state["quadrant"]
-        allowed = set(
-            (x, y) for x in quadrant["x"] for y in quadrant["y"]
-        )
-        visited = state["visited"]
+        # Normalise the incoming state: the web simulator hands the state
+        # over as JavaScript structures (arrays / proxy objects), so every
+        # coordinate is converted to plain Python ints first. Without this,
+        # membership tests like `neighbour in visited` silently fail in the
+        # web app (a tuple never matches a JS array element), the car
+        # believes nothing has been explored and re-plans every tick - it
+        # spins in place instead of sweeping straight like the built-in
+        # cars. The desktop app already passes native Python types, which
+        # these conversions leave untouched.
+        position = (int(state["position"][0]), int(state["position"][1]))
+        goal = (int(state["goal"][0]), int(state["goal"][1]))
+        visited = {(int(v[0]), int(v[1])) for v in state["visited"]}
+        qx = {int(v) for v in state["quadrant"]["x"]}
+        qy = {int(v) for v in state["quadrant"]["y"]}
+        allowed = set((x, y) for x in qx for y in qy)
 
         # Speed-run scenario: the maze is treated as already known, so the
         # car drives the shortest route straight to its centre goal.
@@ -147,7 +154,7 @@ class CarController:
         front = state["direction"]
         left = (front + 3) % 4
         right = (front + 1) % 4
-        open_dirs = set(self._open_dirs(state, position))
+        open_dirs = set(self._open_dirs(state, position, qx, qy))
         reserved = RESERVED_CORRIDOR.get(self.car_index, frozenset())
 
         # Sweep regions: car 2 clears the top half of its quadrant
@@ -246,7 +253,7 @@ class CarController:
                 dist = self._bfs(state, position, area or region, avoid=avoid)
                 found = []
                 for cell, value in dist.items():
-                    for d in self._open_dirs(state, cell):
+                    for d in self._open_dirs(state, cell, qx, qy):
                         neighbour = (cell[0] + DX[d], cell[1] + DY[d])
                         if (
                             neighbour not in visited
