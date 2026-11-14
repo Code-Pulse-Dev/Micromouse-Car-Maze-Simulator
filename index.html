@@ -116,7 +116,7 @@
       <div class="row" style="justify-content:flex-end"><span id="speedLbl">Speed 300  (220 ms)</span></div>
       <div class="chk"><input type="checkbox" id="chkTurn" checked> <label for="chkTurn">Turn Delay</label></div>
       <div class="chk"><input type="checkbox" id="chkColl" checked> <label for="chkColl">Collision Checking</label></div>
-      <div class="chk"><input type="checkbox" id="chkTrail"> <label for="chkTrail">Show Movement Trail</label></div>
+      <div class="chk"><input type="checkbox" id="chkTrail" checked> <label for="chkTrail">Show Movement Trail</label></div>
       <div class="chk"><input type="checkbox" id="chkPath" checked> <label for="chkPath">Show Path To Target (Dashed)</label></div>
       <div class="hint"><b>Manual Controls:</b> Arrow keys / WASD drive car 1.
         <b>Space</b> = one Step. Click a cell edge to toggle a wall.</div>
@@ -285,15 +285,22 @@ const inZone = (z, x, y) => x >= ZONES[z][0] && x <= ZONES[z][1] && y >= ZONES[z
 let mode = "explore";
 let speedVal = 300, stepMs = 220, currentStepDur = 220;
 let running = false, timer = null, totalSteps = 0;
-let turnDelay = false, collisionChecking = true, trails = false, showPath = true, sweepFar = true;
+let turnDelay = true, collisionChecking = true, trails = true, showPath = true, sweepFar = true;
 let cars = [];
 let recording = false, recordedEvents = [], replayFrames = null, replayIdx = 0, replayTimer = null;
 let floodCache = null, statusTick = 0;
+let raceStartedAt = null, raceFinishedAt = null;
+const nowMs = () => Date.now();
+function raceElapsed() {
+  if (raceStartedAt === null) return 0;
+  return Math.max(0, ((raceFinishedAt ?? nowMs()) - raceStartedAt) / 1000);
+}
 
 function makeCar(i) {
   const [x, y, d] = STARTS[i];
   return {
     id: i, x, y, dir: d, phase: 1, finished: false, finishStep: null, target: null,
+    goalTime: null,
     known: Array.from({length: SIZE}, () => Array.from({length: SIZE}, () => [false,false,false,false])),
     visited: new Set([y*SIZE + x]), moves: 0, turns: 0, plan: [],
     px: x, py: y, pang: ANGLES[d], ang: ANGLES[d], turned: false, stopped: false,
@@ -303,6 +310,7 @@ function reset(keepMaze) {
   stopTimers();
   cars = [0,1,2,3].map(makeCar);
   totalSteps = 0; running = false;
+  raceStartedAt = null; raceFinishedAt = null;
   btnRun.textContent = "Run";
   floodCache = null;
   if (mode === "shortest") for (const c of cars) loadFullMap(c);
@@ -401,9 +409,6 @@ function builtinDecide(c) {
     const p = planFrom(c, c.x, c.y, c.dir, new Set([cellKey(...GOALS_CAR[c.id])]), f);
     if (!p) return;
     applyPlan(c, p);
-    if (c.x === GOALS_CAR[c.id][0] && c.y === GOALS_CAR[c.id][1] && !c.finished) {
-      c.finished = true; c.finishStep = totalSteps;
-    }
     return;
   }
   const hops = bfsHops(c, c.x, c.y, f);
@@ -460,22 +465,25 @@ function builtinDecide(c) {
 }
 function applyPlan(c, p) {
   if (!p.path.length) return;
-  c.plan = p.path.slice(1);
-  c.turns += p.turns;
-  c.turned = p.turns > 0;
-  if (p.firstDir >= 0) { c.pang = ANGLES[c.dir]; c.dir = p.firstDir; c.ang = ANGLES[c.dir]; }
   const nxt = p.path[0];
-  if (mode === "shortest" && collisionChecking && occupiedByOther(c, nxt[0], nxt[1])) {
-    telemetry.textContent = `Car ${c.id + 1} held: another car is in the way`;
-    c.plan = []; c.turned = false; return;
+  const absDir = nxt[1] < c.y ? 0 : nxt[0] > c.x ? 1 : nxt[1] > c.y ? 2 : 3;
+  c.plan = p.path;
+  if (absDir !== c.dir) {
+    if (turnDelay) {
+      // Desktop behaviour: the car pivots on the spot for a whole tick
+      // and only drives into the next cell on the following tick.
+      c.pang = ANGLES[c.dir]; c.dir = absDir; c.ang = ANGLES[absDir];
+      c.turns += 1; c.turned = true;
+      return;
+    }
+    c.turns += 1;
   }
+  c.turned = false;
+  c.pang = ANGLES[c.dir]; c.dir = absDir; c.ang = ANGLES[absDir];
   c.px = c.x; c.py = c.y;
   c.x = nxt[0]; c.y = nxt[1];
   c.moves++;
   c.visited.add(c.y*SIZE + c.x);
-}
-function occupiedByOther(c, x, y) {
-  return cars.some(o => o !== c && o.x === x && o.y === y);
 }
 
 /* ============================ adapter (car code) ============================ */
@@ -585,20 +593,16 @@ function adapterDecide(c) {
     return;
   }
   if (action === "stop") {
-    c.stopped = true; c.finished = true; c.finishStep = totalSteps; telemetry.textContent = `Car ${c.id + 1} retired (stop)`;
+    c.stopped = true; c.finished = true; c.finishStep = totalSteps;
     return;
   }
   if (action === "forward") {
     const nx = c.x + DX[c.dir], ny = c.y + DY[c.dir];
     if (outside(nx, ny)) { telemetry.textContent = `Car ${c.id + 1} held at its quadrant boundary`; return; }
     if (walls[c.y][c.x][c.dir]) { telemetry.textContent = `Car ${c.id + 1} code tried to drive into a wall`; return; }
-    if (mode === "shortest" && collisionChecking && occupiedByOther(c, nx, ny)) {
-      telemetry.textContent = `Car ${c.id + 1} held: another car is in the way`; return;
-    }
     c.plan = [[nx, ny]];
     c.px = c.x; c.py = c.y; c.x = nx; c.y = ny; c.moves++; c.turned = false;
     c.visited.add(ny*SIZE + nx);
-    if (c.x === GOALS_CAR[c.id][0] && c.y === GOALS_CAR[c.id][1]) { c.finished = true; c.finishStep = totalSteps; }
     return;
   }
   telemetry.textContent = `Car ${c.id + 1} code returned unknown action ${JSON.stringify(action)}`;
@@ -618,20 +622,65 @@ function quadrantWallMatrix(i) {
 
 /* ============================ step / timers ============================ */
 let stepStart = 0;
+/* One desktop tick: every unfinished car takes exactly one action — a
+   turn-in-place (when Turn Delay is on) or a one-cell move. A car ends its
+   run when it stands on its own centre goal with the quadrant swept. */
 function step() {
   totalSteps++;
-  for (const c of cars) if (!c.finished) {
+  let active = false;
+  for (const c of cars) {
+    if (c.finished) continue;
+    active = true;
+    c.visited.add(c.y*SIZE + c.x);
+    if (c.goalTime === null && GOALS.some(([gx, gy]) => gx === c.x && gy === c.y))
+      c.goalTime = raceElapsed();
+    const onOwnGoal = c.x === GOALS_CAR[c.id][0] && c.y === GOALS_CAR[c.id][1];
+    if (onOwnGoal && (mode !== "explore" || sweepComplete(c))) {
+      c.finished = true; c.finishStep = totalSteps; continue;
+    }
     sense(c);
     if (adapterState.type !== "builtin" && (adapterState.source || jsStub)) adapterDecide(c);
     else builtinDecide(c);
   }
-  const anyTurn = cars.some(c => c.turned);
-  const base = Math.max(50, stepMs);
-  currentStepDur = base + (turnDelay && anyTurn ? base : 0);
+  currentStepDur = Math.max(50, stepMs);
   animT = 0;
   stepStart = 0;                       // render loop restarts the easing
   if (recording) recordFrame();
   updateStats();
+  if (!active || cars.every(c => c.finished)) {
+    raceFinishedAt = nowMs();
+    if (running) { stopTimers(); btnRun.textContent = "Run"; }
+    telemetry.textContent = "Competition finished: " + resultLine();
+  }
+}
+function resultLine() {
+  return cars.map((c, i) => `Car ${i + 1}: ${goalText(c)}; ` +
+    `Explored ${exploredCount(c).pct}% (${exploredCount(c).vis} cells); ` +
+    `Distance ${c.moves} cells; Turns ${c.turns}`).join(", ");
+}
+function goalText(c) {
+  return c.goalTime !== null ? `Goal Reached In ${c.goalTime.toFixed(1)} s` : "Not Reached";
+}
+/* Desktop _sweep_complete: every cell reachable from the car's start has
+   been visited, except the centre goal itself. */
+function sweepComplete(c) {
+  const [sx, sy] = STARTS[c.id];
+  const seen = new Set([sy*SIZE + sx]);
+  const q = [[sx, sy]];
+  while (q.length) {
+    const [x, y] = q.shift();
+    for (let d = 0; d < 4; d++) {
+      if (walls[y][x][d]) continue;
+      const nx = x + DX[d], ny = y + DY[d];
+      if (!inb(nx, ny) || !inZone(c.id, nx, ny)) continue;
+      const k = ny*SIZE + nx;
+      if (!seen.has(k)) { seen.add(k); q.push([nx, ny]); }
+    }
+  }
+  const g = GOALS_CAR[c.id];
+  seen.delete(g[1]*SIZE + g[0]);
+  for (const k of seen) if (!c.visited.has(k)) return false;
+  return true;
 }
 function stopTimers() {
   if (timer) { clearInterval(timer); clearTimeout(timer); timer = null; }
@@ -645,14 +694,15 @@ function tick() {
 }
 function startLoop() {
   running = true; btnRun.textContent = "Pause";
-  // Desktop flow: every action gets exactly its own duration, so a
-  // turning cell takes two delays and a straight cell takes one.
+  if (raceStartedAt === null) raceStartedAt = nowMs();
+  raceFinishedAt = null;
+  // Desktop pacing: one fixed delay per tick, whatever the cars do in it.
   const pump = () => {
     if (!running) return;
     step();
-    timer = setTimeout(pump, Math.max(20, currentStepDur));
+    timer = setTimeout(pump, Math.max(20, stepMs));
   };
-  timer = setTimeout(pump, Math.max(20, currentStepDur));
+  timer = setTimeout(pump, Math.max(20, stepMs));
 }
 
 /* ============================ rendering ============================ */
@@ -726,7 +776,7 @@ function drawCarBody(X, Y, angDeg, color, motion, phase, blocked, label) {
   let spread = 6, reach = 16, width = 1, dash = [2, 3];
   if (blocked) { spread = 6; reach = 5; width = 2; dash = []; }
   else if (motion === "move") {
-    const pulse = 0.5 + 0.5 * Math.sin(performance.now() * 2 * Math.PI / 500);
+    const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 2 * Math.PI / 500);
     spread = 6; reach = 18 + Math.round(10 * pulse); width = 2; dash = [4, 3];
   } else if (motion === "turn") {
     spread = 8 + 4 * phase; reach = 24; width = 2; dash = [3, 2];
@@ -746,6 +796,13 @@ function draw() {
   ctx.clearRect(0, 0, W, W);
   ctx.fillStyle = "#0b1324"; ctx.fillRect(0, 0, W, W);
 
+  // cell backgrounds - dark blue floor, greyish goal block (desktop colours)
+  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
+    const isGoal = GOALS.some(([gx, gy]) => gx === x && gy === y);
+    ctx.fillStyle = isGoal ? "#3b3540" : "#101d33";
+    ctx.fillRect(PAD + x*CELL + 1, PAD + y*CELL + 1, CELL - 2, CELL - 2);
+  }
+
   if (cars.length) {
     const F = floodMap(cars[0]);
     ctx.font = "10px Consolas, monospace"; ctx.textAlign = "center";
@@ -753,12 +810,18 @@ function draw() {
       const v = F[y*SIZE + x];
       if (v === Infinity) continue;
       const isGoal = GOALS.some(([gx, gy]) => gx === x && gy === y);
-      ctx.fillStyle = isGoal ? "#ffd43b" : "#ff922b";
-      ctx.fillText(isGoal ? "GOAL" : String(v), PAD + x*CELL + CELL/2, PAD + y*CELL + CELL/2 + 3);
+      ctx.fillStyle = isGoal ? "#ffd166" : "#ffa23e";
+      ctx.fillText(String(v), PAD + x*CELL + CELL/2, PAD + y*CELL + CELL/2 + 3);
     }
   }
-  ctx.strokeStyle = "#ffd43b"; ctx.lineWidth = 1.5;
-  for (const [gx, gy] of GOALS) ctx.strokeRect(PAD + gx*CELL + 1, PAD + gy*CELL + 1, CELL - 2, CELL - 2);
+  // one "GOAL" across the centre block - shown until the first car gets
+  // there, exactly like the desktop app
+  if (cars.length && cars.every(c => c.goalTime === null)) {
+    const centre = PAD + 8*CELL;
+    ctx.font = "bold 13px 'Segoe UI', sans-serif"; ctx.textAlign = "center";
+    ctx.fillStyle = "#7c5c12"; ctx.fillText("GOAL", centre + 1, centre + 5);
+    ctx.fillStyle = "#ffd166"; ctx.fillText("GOAL", centre, centre + 4);
+  }
 
   ctx.strokeStyle = "#dbe4f3"; ctx.lineWidth = 2; ctx.lineCap = "round";
   ctx.beginPath();
@@ -772,16 +835,14 @@ function draw() {
   ctx.stroke();
 
   if (trails) {
+    // desktop style: every visited cell is tinted with that car's colour
     for (const c of cars) {
-      ctx.strokeStyle = CAR_COLORS[c.id]; ctx.globalAlpha = .3; ctx.lineWidth = 2;
-      ctx.beginPath();
-      let first = true;
+      ctx.fillStyle = CAR_COLORS[c.id]; ctx.globalAlpha = .5;
       for (const k of c.visited) {
         const x = k % SIZE, y = Math.floor(k / SIZE);
-        const X = PAD + x*CELL + CELL/2, Y = PAD + y*CELL + CELL/2;
-        if (first) { ctx.moveTo(X, Y); first = false; } else ctx.lineTo(X, Y);
+        ctx.fillRect(PAD + x*CELL + 3, PAD + y*CELL + 3, CELL - 6, CELL - 6);
       }
-      ctx.stroke(); ctx.globalAlpha = 1;
+      ctx.globalAlpha = 1;
     }
   }
 
@@ -849,15 +910,11 @@ function exploredCount(c) {
 function updateStats() {
   const body = document.getElementById("statusBody");
   if (!body) return;
-  const elapsed = (totalSteps * stepMs / 1000).toFixed(1);
   let html = `<b>Four-car competition (${MODE_TEXT[mode]}) — ${adapterLabel()}</b><br>`;
-  html += `Elapsed: ${elapsed} s<br><br>`;
+  html += `Elapsed: ${raceElapsed().toFixed(1)} s<br><br>`;
   cars.forEach((c, i) => {
     const { vis, pct } = exploredCount(c);
-    const state = c.stopped ? "Retired"
-      : c.finished ? `Reached in ${((c.finishStep ?? 0) * stepMs / 1000).toFixed(1)} s`
-      : running ? "Running" : "Not Reached";
-    html += `Car ${i+1}: ${state}; Explored ${pct}% (${vis} cells); ` +
+    html += `Car ${i+1}: ${goalText(c)}; Explored ${pct}% (${vis} cells); ` +
             `Distance ${c.moves} cells; Turns ${c.turns}<br>`;
   });
   html += "<br>";
@@ -866,7 +923,7 @@ function updateStats() {
       const nx = c.x + DX[d], ny = c.y + DY[d];
       return (walls[c.y][c.x][d] || !inb(nx, ny) || !inZone(i, nx, ny)) ? "WALL" : "open";
     };
-    const state = c.stopped ? "Retired" : c.finished ? "Finished" : running ? "Running" : "Ready";
+    const state = c.finished ? "Finished Race" : running ? "Running" : "Ready";
     html += `<span class="carLine">Car ${i+1}: Column ${c.x+1}, Row ${c.y+1}; ` +
             `Facing ${FACING[c.dir]}; ${state}</span><br>` +
             `Sensors: front=${sens(c.dir)}, left=${sens((c.dir+3)%4)}, right=${sens((c.dir+1)%4)}<br>` +
