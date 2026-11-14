@@ -16,9 +16,11 @@
       border-radius:8px; padding:8px 12px; font-size:13px; cursor:pointer; width:100%; }
   button:hover { background:#25395a; }
   button:disabled { opacity:.45; cursor:default; }
-  .layout { display:flex; gap:14px; padding:14px; align-items:flex-start; }
-  #cv { background:#0b1324; border:1px solid var(--line); border-radius:10px; cursor:crosshair; display:block; }
-  .mid { width:236px; display:flex; flex-direction:column; gap:8px; }
+  .layout { display:flex; flex-wrap:wrap; gap:14px; padding:14px; align-items:flex-start; }
+  #cv { background:#0b1324; border:1px solid var(--line); border-radius:10px; cursor:crosshair;
+        display:block; width:100%; max-width:544px; height:auto; }
+  .canvasWrap { flex:0 0 auto; width:544px; max-width:100%; min-width:0; }
+  .mid { width:236px; min-width:200px; display:flex; flex-direction:column; gap:8px; }
   .mid h2 { margin:0 0 6px; font-size:17px; font-weight:600; color:var(--blue); }
   .sub { font-size:12px; color:var(--dim); text-transform:uppercase; letter-spacing:.05em; margin-top:10px; }
   .recent { background:var(--panel); border:1px solid var(--line); border-radius:8px;
@@ -27,8 +29,8 @@
   .recent div:hover { background:var(--panel2); }
   .modes { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:8px; font-size:13px; }
   .modes label { display:flex; gap:8px; align-items:center; padding:4px 0; color:var(--text); }
-  .right { flex:1; min-width:330px; max-width:530px; background:var(--panel);
-           border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .right { flex:1 1 300px; min-width:min(300px, 100%); max-width:530px; background:var(--panel);
+           border:1px solid var(--line); border-radius:10px; overflow:auto; }
   .tabs { display:flex; border-bottom:1px solid var(--line); background:var(--panel2); }
   .tabs button { border:0; border-radius:0; background:transparent; padding:9px 6px;
                  font-size:12.5px; color:var(--dim); width:auto; flex:1;
@@ -76,11 +78,27 @@
                 padding:18px; width:min(520px, 92vw); }
   .modal pre { white-space:pre-wrap; font-family:Consolas, monospace; font-size:12.5px;
                background:#0b1324; border:1px solid var(--line); border-radius:8px; padding:12px; }
+  /* small screens: stack the columns and keep every panel readable */
+  @media (max-width: 1020px) {
+    .mid { width:100%; max-width:560px; }
+    .right { max-width:none; }
+  }
+  @media (max-width: 480px) {
+    .layout { padding:8px; gap:10px; }
+    .pane { padding:10px; }
+    .mid h2 { font-size:15px; }
+    .tabs button { font-size:11.5px; padding:8px 3px; }
+    .modelRow { flex-wrap:wrap; }
+    .modelRow input[type=text] { min-width:110px; }
+  }
+  .pane { overflow-wrap:break-word; }
+  .statusBody { overflow-wrap:anywhere; }
+  .ready { overflow-wrap:anywhere; }
 </style>
 </head>
 <body>
 <div class="layout">
-  <div><canvas id="cv" width="544" height="544"></canvas></div>
+  <div class="canvasWrap"><canvas id="cv" width="544" height="544"></canvas></div>
 
   <div class="mid">
     <h2>Micromouse Car Simulator <span id="buildTag" style="display:block;font-size:10px;color:#5a718f;font-weight:normal;white-space:nowrap"></span></h2>
@@ -415,14 +433,16 @@ function desktopMove(c) {
     distGoal = floodDist(goalOpen, [goal]);
     const reserved = RESERVED[c.id];
     const sweepMap = goalOpen.map(row => row.map(cell => cell.slice()));
+    // the centre goal is always sealed: sweep paths never cross it, so the
+    // car only reaches the goal on its final run - and stops there
     const blockedCells = new Set(reserved);
-    if (reserved.size) blockedCells.add(cellKey(goal[0], goal[1]));
+    blockedCells.add(cellKey(goal[0], goal[1]));
     for (const k of blockedCells) {
       const [rx, ry] = k.split(",").map(Number);
       sealCell(sweepMap, rx, ry);
     }
     const goalSealed = goalOpen.map(row => row.map(cell => cell.slice()));
-    if (reserved.size) sealCell(goalSealed, goal[0], goal[1]);
+    sealCell(goalSealed, goal[0], goal[1]);
 
     // Car 2 clears the top half of its quadrant completely first.
     const topMid = Math.floor((z[2] + z[3] + 1) / 2);
@@ -797,7 +817,9 @@ function step() {
     if (c.goalTime === null && GOALS.some(([gx, gy]) => gx === c.x && gy === c.y))
       c.goalTime = raceElapsed();
     const onOwnGoal = c.x === GOALS_CAR[c.id][0] && c.y === GOALS_CAR[c.id][1];
-    if (onOwnGoal && (mode !== "explore" || sweepComplete(c))) {
+    if (onOwnGoal) {
+      // the car retires the moment it stands on its own centre goal -
+      // no bubbling around the centre, it stops for good
       c.finished = true; c.finishStep = totalSteps; continue;
     }
     sense(c);
@@ -882,8 +904,9 @@ const CELL = 34, PAD = 12;
 const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
 const DPR = window.devicePixelRatio || 1;
 cv.width = (SIZE*CELL + PAD*2) * DPR; cv.height = cv.width;
-cv.style.width = (SIZE*CELL + PAD*2) + "px";
-cv.style.height = (SIZE*CELL + PAD*2) + "px";
+// size stays in CSS (width:100%, max-width:544px) so the board scales to
+// every screen instead of overflowing a phone
+cv.style.maxWidth = "100%";
 ctx.scale(DPR, DPR);
 let animT = 1;
 /* Continuous render loop, like the desktop's 25 ms redraw: the easing
@@ -2002,7 +2025,7 @@ function showFinishedModal() {
       `Distance ${c.moves} cells; Turns ${c.turns}`).join("\n");
   finishModal.style.display = "flex";
 }
-document.getElementById("buildTag").textContent = "build 2026-11-15.3";
+document.getElementById("buildTag").textContent = "build 2026-11-15.4";
 </script>
 </body>
 </html>
