@@ -104,6 +104,15 @@
     .modelRow { flex-wrap:wrap; }
     .modelRow input[type=text] { min-width:110px; }
   }
+  /* laptop / desktop: the right panel is pinned to the window height so a
+     long pane (Status, Car Code, Hardware) scrolls inside the panel and
+     the tab strip stays in view - no more scrolling the page up to read
+     the bottom of a tab */
+  @media (min-width: 1021px) {
+    .right { max-height:calc(100vh - 28px); overflow:auto; overscroll-behavior:contain; }
+    .tabs { position:sticky; top:0; z-index:3; }
+    .pane { padding-bottom:22px; }
+  }
   .pane { overflow-wrap:break-word; }
   .statusBody { overflow-wrap:anywhere; }
   .ready { overflow-wrap:anywhere; }
