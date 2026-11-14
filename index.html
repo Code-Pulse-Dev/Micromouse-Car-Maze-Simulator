@@ -1480,35 +1480,18 @@ async function selectCarModel(key) {
     reset();
     return;
   }
-  let src = MODEL_SOURCES[key];
-  if (!src && PRESETS[key]) {
-    readyEl(key).textContent = "Loading simulation adapter…";
-    try {
-      try {
-        const res = await fetch(encodeURI(PRESETS[key].path));
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        src = await res.text();
-      } catch (e1) {
-        // fallback straight from GitHub so the adapters work anywhere
-        const raw = "https://raw.githubusercontent.com/Code-Pulse-Dev/Micromouse-Car-Maze-Simulator/main/" +
-                    PRESETS[key].path;
-        const res2 = await fetch(encodeURI(raw));
-        if (!res2.ok) throw new Error("HTTP " + res2.status);
-        src = await res2.text();
-      }
-      MODEL_SOURCES[key] = src;
-    } catch (e) {
-      readyEl(key).textContent =
-        "Ready: the simulation adapter needs a connection — upload the code folder to run it.";
-      setCarTypeRadio("builtin");
-      adapterState = { type: "builtin", name: "built-in logic", source: null };
-      reset();
-      return;
-    }
-  }
+  const src = MODEL_SOURCES[key];
   if (!src) {
+    // selecting a model only records the choice - the adapter becomes
+    // active and "Ready" only once its code is actually uploaded
+    const nm = key === "carA" ? "ESP32-S3 Micromouse"
+      : key === "carB" ? "TQD Micromouse JS2" : "My car";
+    adapterState = { type: "builtin", name: "built-in logic", source: null };
     readyEl(key).textContent =
-      "Ready: (no adapter connected — click Upload Code Folder…)";
+      `Ready: ${nm} selected — code not uploaded yet (click Upload Code Folder…)`;
+    codeStatus.textContent =
+      `${nm} selected — built-in scenarios run until the adapter code is uploaded`;
+    reset();
     return;
   }
   const name = key === "mycar"
@@ -1516,7 +1499,7 @@ async function selectCarModel(key) {
     : PRESETS[key].name;
   adapterState.type = key;
   await installAdapterSource(src, name);
-  readyEl(key).textContent = "Ready: " + name + " — adapter loaded";
+  readyEl(key).textContent = "Ready: " + name + " — adapter uploaded";
 }
 
 /* ---------- guided upload flow (desktop-style) ----------
@@ -1554,19 +1537,21 @@ function showUploadDialog(key) {
       "Car code upload — first select the car model",
       "Please first select the car model above\n" +
       "(ESP32-S3 Micromouse, TQD Micromouse JS2 or My car).\n\n" +
-      "Then choose the matching adapter on the GitHub adapters page and\n" +
-      "upload its folder here. The Ready line only names the adapter once\n" +
-      "it is actually connected.",
+      "Then open the GitHub adapters browser: navigate to CarController.py,\n" +
+      "double-click it and confirm — the upload then completes. A single\n" +
+      "click on CarController.py only shows its code. The Ready line names\n" +
+      "the adapter only after the code is uploaded.",
       gitBtn + closeBtn);
   } else {
     const modelName = key === "mycar" ? "My car"
       : key === "carA" ? "ESP32-S3 Micromouse" : "TQD Micromouse JS2";
     uploadModal.innerHTML = shell(
       "Car code upload — choose the adapter on GitHub",
-      "1. Open the GitHub adapters page and open the matching\n" +
+      "1. Open the GitHub adapters browser and navigate to the matching\n" +
       `   adapter folder for ${modelName}.\n` +
-      "2. Click Upload Adapter Folder here and select that folder\n" +
-      "   (it must contain CarController.py).\n" +
+      "2. Double-click CarController.py — a confirmation pops up; after\n" +
+      "   you confirm, the upload is successful. Single-clicking it will\n" +
+      "   only show the code.\n" +
       "3. The Ready line then shows which adapter is connected.",
       gitBtn +
       '<button id="upProceed" style="' + uploadBtnStyle(
@@ -1574,13 +1559,227 @@ function showUploadDialog(key) {
       closeBtn);
   }
   uploadModal.style.display = "flex";
-  document.getElementById("upOpenGit").onclick = () => window.open(GITHUB_ADAPTERS_URL, "_blank");
+  document.getElementById("upOpenGit").onclick = () => ghOpen(key);
   const proceed = document.getElementById("upProceed");
   if (proceed) proceed.onclick = () => {
     uploadModal.style.display = "none";
     document.getElementById("fileCode").click();
   };
   document.getElementById("upClose").onclick = () => uploadModal.style.display = "none";
+}
+
+/* ---------- in-app GitHub adapter browser ----------
+   carA/carB: browse the project's car_codes folder on GitHub.
+   mycar: first enter your own GitHub account (public repositories),
+   then browse your adapters.
+   Single-click a file  -> shows its code (preview only).
+   Double-click CarController.py -> confirmation dialog -> upload completes. */
+const GH_OWNER = "Code-Pulse-Dev", GH_REPO = "Micromouse-Car-Maze-Simulator";
+const ghCtx = { target: "carA", owner: GH_OWNER, repo: GH_REPO, path: "car_codes", items: [], note: "" };
+const ghModal = document.createElement("div");
+ghModal.style.cssText = "display:none;position:fixed;inset:0;background:rgba(4,10,20,.65);" +
+  "z-index:70;align-items:center;justify-content:center";
+document.body.appendChild(ghModal);
+const ghConfirm = document.createElement("div");
+ghConfirm.style.cssText = "display:none;position:fixed;inset:0;background:rgba(4,10,20,.65);" +
+  "z-index:80;align-items:center;justify-content:center";
+document.body.appendChild(ghConfirm);
+const ghBtn = (id, label, style) =>
+  '<button id="' + id + '" style="border-radius:6px;padding:7px 14px;font:600 13px \'Segoe UI\',sans-serif;cursor:pointer;' +
+  style + '">' + label + '</button>';
+const GH_BTN_GIT = ghBtn("ghGit", "Open on GitHub", "background:#1d2d46;color:#7fe7d4;border:1px solid #2a3c58");
+const GH_BTN_CLOSE = ghBtn("ghClose", "Close", "background:transparent;color:#9db4c5;border:1px solid #2a3c58");
+
+async function ghApi(owner, repo, path) {
+  const enc = (path || "").split("/").filter(Boolean).map(encodeURIComponent).join("/");
+  const url = "https://api.github.com/repos/" + encodeURIComponent(owner) + "/" +
+    encodeURIComponent(repo) + "/contents/" + enc;
+  const res = await fetch(url, { headers: { Accept: "application/vnd.github+json" } });
+  if (!res.ok) throw new Error("GitHub API HTTP " + res.status);
+  return await res.json();
+}
+async function ghRaw(owner, repo, path) {
+  const enc = (path || "").split("/").filter(Boolean).map(encodeURIComponent).join("/");
+  const res = await fetch("https://raw.githubusercontent.com/" + encodeURIComponent(owner) + "/" +
+    encodeURIComponent(repo) + "/" + enc);
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return await res.text();
+}
+
+function ghOpen(target) {
+  ghCtx.target = target;
+  ghCtx.owner = GH_OWNER; ghCtx.repo = GH_REPO; ghCtx.path = "car_codes";
+  ghCtx.items = []; ghCtx.note = "";
+  ghModal.style.display = "flex";
+  if (target === "mycar") { ghRenderLogin(); return; }
+  ghRender("Loading GitHub adapters…");
+  ghBrowse();
+}
+function ghRenderLogin() {
+  ghModal.innerHTML =
+    '<div style="background:#16233b;border:1px solid rgba(45,212,191,.35);border-radius:10px;' +
+    'padding:18px 20px;width:640px;max-width:92vw;max-height:86vh;overflow:auto;box-shadow:0 18px 50px rgba(0,0,0,.6)">' +
+    '<div style="font:600 15px \'Segoe UI\',sans-serif;color:#7fe7d4;margin-bottom:8px">GitHub adapters — your own account (My car)</div>' +
+    '<div style="font:13px \'Segoe UI\',sans-serif;color:#dbe4f3;margin-bottom:12px">' +
+    "Enter your own GitHub account to load your adapters from your repositories " +
+    "(public repositories only). Then navigate to CarController.py and double-click it to upload — " +
+    "a confirmation pops up; single-click only shows the code.</div>" +
+    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">' +
+    '<input id="ghUser" placeholder="GitHub username" style="background:#0e1930;border:1px solid #2a3c58;color:#dbe4f3;border-radius:6px;padding:7px 10px;font:13px Consolas;width:200px">' +
+    '<input id="ghRepoName" placeholder="Repository (optional)" style="background:#0e1930;border:1px solid #2a3c58;color:#dbe4f3;border-radius:6px;padding:7px 10px;font:13px Consolas;width:200px">' +
+    ghBtn("ghLogin", "Log In & Browse", "background:#2dd4bf;color:#06201c;border:0") +
+    '</div><div id="ghList"></div>' +
+    '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">' + GH_BTN_CLOSE + '</div></div>';
+  document.getElementById("ghLogin").onclick = async () => {
+    const user = document.getElementById("ghUser").value.trim();
+    if (!user) { ghCtx.note = "Enter your GitHub username first."; ghRenderLogin(); return; }
+    const repo = document.getElementById("ghRepoName").value.trim();
+    if (repo) {
+      ghCtx.owner = user; ghCtx.repo = repo; ghCtx.path = "";
+      await ghTryOpenRepo();
+      return;
+    }
+    ghCtx.note = "Loading your repositories…"; ghRenderLogin();
+    try {
+      const res = await fetch("https://api.github.com/users/" + user + "/repos?per_page=100");
+      if (!res.ok) throw new Error("GitHub API HTTP " + res.status);
+      const repos = await res.json();
+      const list = repos.map(r =>
+        '<div data-repo="' + r.name + '" style="cursor:pointer;padding:7px 10px;border-radius:6px;' +
+        'font:13px Consolas;color:#dbe4f3" onmouseover="this.style.background=\'#1d2d46\'" ' +
+        'onmouseout="this.style.background=\'transparent\'">▸ ' + r.name + '  <span style="color:#5a718f">(double-click to open)</span></div>').join("");
+      ghCtx.note = "Double-click a repository to browse it.";
+      ghModal.innerHTML =
+        '<div style="background:#16233b;border:1px solid rgba(45,212,191,.35);border-radius:10px;' +
+        'padding:18px 20px;width:640px;max-width:92vw;max-height:86vh;overflow:auto;box-shadow:0 18px 50px rgba(0,0,0,.6)">' +
+        '<div style="font:600 15px \'Segoe UI\',sans-serif;color:#7fe7d4;margin-bottom:6px">' + user + ' — repositories</div>' +
+        '<div style="font:12px \'Segoe UI\',sans-serif;color:#9db4c5;margin-bottom:10px">' + ghCtx.note + '</div>' +
+        '<div id="ghList">' + (list || "No public repositories found.") + '</div>' +
+        '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">' + GH_BTN_CLOSE + '</div></div>';
+      document.getElementById("ghClose").onclick = () => ghModal.style.display = "none";
+      document.querySelectorAll("#ghList [data-repo]").forEach(el => {
+        el.ondblclick = () => { ghCtx.owner = user; ghCtx.repo = el.dataset.repo; ghCtx.path = ""; ghTryOpenRepo(); };
+      });
+    } catch (e) {
+      ghCtx.note = "GitHub error: " + e.message;
+      ghRenderLogin();
+    }
+  };
+  document.getElementById("ghClose").onclick = () => ghModal.style.display = "none";
+}
+async function ghTryOpenRepo() {
+  ghCtx.note = "Loading repository…"; ghRender("Loading…");
+  for (const p of ["car_codes", ""]) {
+    try {
+      const items = await ghApi(ghCtx.owner, ghCtx.repo, p);
+      ghCtx.path = p; ghCtx.items = items; ghCtx.note = "";
+      ghRender(); return;
+    } catch (e) { if (p === "") { ghCtx.note = "GitHub error: " + e.message; ghRender(); } }
+  }
+}
+async function ghBrowse() {
+  try {
+    ghCtx.items = await ghApi(ghCtx.owner, ghCtx.repo, ghCtx.path);
+    ghCtx.note = "";
+  } catch (e) { ghCtx.note = "GitHub error: " + e.message; }
+  ghRender();
+}
+function ghRender(statusMsg) {
+  const targetName = ghCtx.target === "carA" ? "ESP32-S3 Micromouse"
+    : ghCtx.target === "carB" ? "TQD Micromouse JS2" : "My car";
+  const crumbs = (ghCtx.path ? ghCtx.path.split("/") : []).map(seg =>
+    '<span style="color:#5a718f">/</span> <span style="color:#dbe4f3">' + seg + '</span>').join(" ");
+  const dirs = ghCtx.items.filter(i => i.type === "dir");
+  const files = ghCtx.items.filter(i => i.type !== "dir");
+  const row = (it, i) =>
+    '<div data-i="' + i + '" style="cursor:pointer;padding:6px 10px;border-radius:6px;font:13px Consolas;color:' +
+    (it.type === "dir" ? "#7fe7d4" : "#dbe4f3") + '" ' +
+    'onmouseover="this.style.background=\'#1d2d46\'" onmouseout="this.style.background=\'transparent\'">' +
+    (it.type === "dir" ? "▸ " : "· ") + it.name +
+    (it.name.toLowerCase() === "carcontroller.py" ? '  <span style="color:#ffd166">(double-click to upload)</span>' : '') +
+    '</div>';
+  ghModal.innerHTML =
+    '<div style="background:#16233b;border:1px solid rgba(45,212,191,.35);border-radius:10px;' +
+    'padding:18px 20px;width:640px;max-width:92vw;max-height:86vh;overflow:auto;box-shadow:0 18px 50px rgba(0,0,0,.6)">' +
+    '<div style="font:600 15px \'Segoe UI\',sans-serif;color:#7fe7d4;margin-bottom:6px">GitHub adapters — ' + targetName + '</div>' +
+    '<div style="font:12px \'Segoe UI\',sans-serif;color:#ffd166;background:rgba(255,212,102,.08);' +
+    'border:1px solid rgba(255,212,102,.25);border-radius:6px;padding:8px 10px;margin-bottom:10px">' +
+    "Single-click a file: shows its code (preview only). " +
+    "Double-click CarController.py: a confirmation pops up — after you confirm, the upload completes." +
+    '</div>' +
+    '<div style="font:13px Consolas;color:#9db4c5;margin-bottom:8px">' + ghCtx.owner + ' / ' + ghCtx.repo + crumbs + '</div>' +
+    (ghCtx.note && !statusMsg ? '<div style="font:12px \'Segoe UI\',sans-serif;color:#7fe7d4;margin-bottom:8px">' + ghCtx.note + '</div>' : '') +
+    '<div id="ghList" style="min-height:120px;max-height:260px;overflow:auto;border:1px solid #2a3c58;border-radius:6px;padding:4px">' +
+    (statusMsg || (dirs.map(row).join("") + files.map(row).join("") || "Empty folder.")) + '</div>' +
+    '<pre id="ghPreview" style="display:none;font:11px Consolas;color:#9db4c5;white-space:pre-wrap;' +
+    'background:#0e1930;border:1px solid #2a3c58;border-radius:6px;padding:8px 10px;max-height:160px;overflow:auto;margin-top:10px"></pre>' +
+    '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">' +
+    GH_BTN_GIT + GH_BTN_CLOSE + '</div></div>';
+  document.getElementById("ghClose").onclick = () => { ghModal.style.display = "none"; };
+  document.getElementById("ghGit").onclick = () =>
+    window.open("https://github.com/" + ghCtx.owner + "/" + ghCtx.repo +
+      (ghCtx.path ? "/tree/" + ghCtx.path : ""), "_blank");
+  document.querySelectorAll("#ghList [data-i]").forEach(el => {
+    const it = ghCtx.items[+el.dataset.i];
+    if (!it) return;
+    el.ondblclick = () => {
+      if (it.type === "dir") { ghCtx.path = it.path; ghBrowse(); return; }
+      ghAskUpload(it);
+    };
+    if (it.type !== "dir") el.onclick = async () => {
+      const pre = document.getElementById("ghPreview");
+      pre.style.display = "block";
+      pre.textContent = "Loading code preview… (single click — preview only)";
+      try {
+        const src = await ghRaw(ghCtx.owner, ghCtx.repo, it.path);
+        pre.textContent = "— " + it.name + " (preview, not uploaded) —\n\n" + src.slice(0, 2500);
+      } catch (e) { pre.textContent = "Preview failed: " + e.message; }
+    };
+  });
+}
+function ghAskUpload(it) {
+  const targetName = ghCtx.target === "carA" ? "ESP32-S3 Micromouse"
+    : ghCtx.target === "carB" ? "TQD Micromouse JS2" : "My car";
+  ghConfirm.innerHTML =
+    '<div style="background:#16233b;border:1px solid rgba(45,212,191,.35);border-radius:10px;' +
+    'padding:18px 22px;min-width:360px;box-shadow:0 18px 50px rgba(0,0,0,.6)">' +
+    '<div style="font:600 15px \'Segoe UI\',sans-serif;color:#7fe7d4;margin-bottom:8px">Confirm adapter upload</div>' +
+    '<div style="font:13px \'Segoe UI\',sans-serif;color:#dbe4f3;white-space:pre-wrap;margin-bottom:14px">' +
+    "Upload " + it.path + "\nas the adapter code for " + targetName + "?</div>" +
+    '<div style="display:flex;gap:10px;justify-content:flex-end">' +
+    ghBtn("ghNo", "Cancel", "background:transparent;color:#9db4c5;border:1px solid #2a3c58") +
+    ghBtn("ghYes", "Confirm Upload", "background:#2dd4bf;color:#06201c;border:0") +
+    '</div></div>';
+  ghConfirm.style.display = "flex";
+  document.getElementById("ghNo").onclick = () => ghConfirm.style.display = "none";
+  document.getElementById("ghYes").onclick = async () => {
+    ghConfirm.style.display = "none";
+    await ghDoUpload(it);
+  };
+}
+async function ghDoUpload(it) {
+  try {
+    const src = await ghRaw(ghCtx.owner, ghCtx.repo, it.path);
+    const key = ghCtx.target;
+    uploadTarget = key;
+    MODEL_SOURCES[key] = src;
+    if (key === "mycar") {
+      const folder = it.path.includes("/") ? it.path.split("/")[0] : ghCtx.repo;
+      document.getElementById("nameC").value = folder;
+    }
+    setCarTypeRadio(key);
+    await selectCarModel(key);
+    readyEl(key).textContent = "Ready: " + targetLabel(key) + " — adapter uploaded (from GitHub: " + it.path + ")";
+    telemetry.textContent = "Car code upload successful: " + it.path;
+    ghCtx.note = "Upload successful — adapter connected: " + it.path;
+    ghRender();
+  } catch (e) {
+    ghCtx.note = "Upload failed: " + e.message;
+    ghRender();
+  }
+}
+function targetLabel(key) {
+  return key === "carA" ? "ESP32-S3 Micromouse" : key === "carB" ? "TQD Micromouse JS2" : "My car";
 }
 
 document.getElementById("fileCode").onchange = async e => {
@@ -1803,7 +2002,7 @@ function showFinishedModal() {
       `Distance ${c.moves} cells; Turns ${c.turns}`).join("\n");
   finishModal.style.display = "flex";
 }
-document.getElementById("buildTag").textContent = "build 2026-11-15.2";
+document.getElementById("buildTag").textContent = "build 2026-11-15.3";
 </script>
 </body>
 </html>
