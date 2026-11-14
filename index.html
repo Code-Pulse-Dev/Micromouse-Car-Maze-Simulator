@@ -2186,8 +2186,8 @@ function showFinishedModal() {
    small viewport height), an overlay asks the user to turn the device to
    portrait. The moment they rotate, the overlay disappears on its own and
    every panel is laid out for the portrait screen. */
-/* ---------- turn-sideways notification (phones and pads only) ----------
-   Shown only when a phone or pad is detected - never on computers or
+/* ---------- turn-sideways notification (phones and tablets only) ----------
+   Shown only when a phone or tablet is detected - never on computers or
    laptops. It carries the device advice and asks the user to turn on
    portrait first, then turn the device sideways (landscape). The moment
    the device is turned sideways the notification clears by itself and
@@ -2205,11 +2205,11 @@ rotateOverlay.innerHTML =
   'Turn your phone sideways</div>' +
   '<div style="font:14px \'Segoe UI\',sans-serif;color:#dbe4f3;line-height:1.5;margin-bottom:14px">' +
   'It is advisable to use a computer or desktop in order to have access to all panels clearly. ' +
-  'With a mobile phone or pad, some panels and functions might be hidden because the screen ' +
+  'With a mobile phone or tablet, some panels and functions might be hidden because the screen ' +
   'size is small.' +
   '</div>' +
   '<div style="font:14px \'Segoe UI\',sans-serif;color:#7fe7d4;line-height:1.5;margin-bottom:16px">' +
-  'For the best view on this device: turn on portrait on your phone or pad first, hold it ' +
+  'For the best view on this device: turn on portrait on your phone or tablet first, hold it ' +
   'upright, then turn it sideways (landscape).' +
   '</div>' +
   '<button id="rotSkip" style="background:transparent;color:#9db4c5;border:1px solid #2a3c58;' +
@@ -2232,8 +2232,8 @@ function updateRotateHint() {
     "ontouchstart" in window;
   const portrait = window.innerHeight > window.innerWidth;
   const width = window.innerWidth;
-  // phones and pads held upright (covers phone widths and pad portrait
-  // widths); computers and laptops are never matched
+  // phones and tablets held upright (covers phone widths and tablet
+  // portrait widths); computers and laptops are never matched
   const show = touch && portrait && width < 900 && !rotateDismissed;
   rotateOverlay.style.display = show ? "flex" : "none";
 }
