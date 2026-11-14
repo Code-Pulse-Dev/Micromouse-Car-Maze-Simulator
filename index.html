@@ -83,7 +83,7 @@
   <div><canvas id="cv" width="544" height="544"></canvas></div>
 
   <div class="mid">
-    <h2>Micromouse Car Simulator</h2>
+    <h2>Micromouse Car Simulator <span id="buildTag" style="font-size:10px;color:#5a718f;font-weight:normal"></span></h2>
     <button id="btnReal">Use Real Maze</button>
     <button id="btnGen">Generate Maze</button>
     <button id="btnClear">Clear Interior Walls</button>
@@ -821,6 +821,7 @@ function step() {
     raceFinishedAt = nowMs();
     if (running) { stopTimers(); btnRun.textContent = "Run"; }
     telemetry.textContent = "Competition finished: " + resultLine();
+    showFinishedModal();
   }
 }
 function resultLine() {
@@ -866,13 +867,14 @@ function startLoop() {
   running = true; btnRun.textContent = "Pause";
   if (raceStartedAt === null) raceStartedAt = nowMs();
   raceFinishedAt = null;
-  // Desktop pacing: one fixed delay per tick, whatever the cars do in it.
+  // Desktop pacing: one fixed delay per tick, plus the small gap its Tk
+  // redraw adds between steps - so each action, turn or move, breathes.
   const pump = () => {
     if (!running) return;
     step();
-    timer = setTimeout(pump, Math.max(20, stepMs));
+    timer = setTimeout(pump, Math.max(40, stepMs + 20));
   };
-  timer = setTimeout(pump, Math.max(20, stepMs));
+  timer = setTimeout(pump, Math.max(40, stepMs + 20));
 }
 
 /* ============================ rendering ============================ */
@@ -931,7 +933,8 @@ function drawCarBody(X, Y, angDeg, color, motion, phase, blocked, label) {
   ctx.strokeStyle = "#b8fff0"; ctx.lineWidth = 1; ctx.stroke();
   for (const [lat, fwd] of [[-10, -7], [10, -7], [-10, 7], [10, 7]]) {
     const [wx, wy] = pt(lat, fwd);
-    ctx.beginPath(); ctx.ellipse(wx, wy, 3, 4, a, 0, Math.PI * 2);
+    // desktop draws the wheels as axis-aligned ovals - they never spin
+    ctx.beginPath(); ctx.ellipse(wx, wy, 3, 4, 0, 0, Math.PI * 2);
     ctx.fillStyle = "#080d18"; ctx.fill();
     ctx.strokeStyle = "#64748b"; ctx.stroke();
   }
@@ -1691,6 +1694,28 @@ if (wantedTab) {
   const tabBtn = [...document.querySelectorAll(".tabs button")].find(b => b.dataset.tab === wantedTab);
   if (tabBtn) tabBtn.click();
 }
+
+/* ---------- competition-finished dialog (desktop messagebox.showinfo) ---------- */
+const finishModal = document.createElement("div");
+finishModal.style.cssText = "display:none;position:fixed;inset:0;background:rgba(4,10,20,.6);" +
+  "z-index:60;align-items:center;justify-content:center";
+finishModal.innerHTML =
+  '<div style="background:#16233b;border:1px solid rgba(45,212,191,.35);border-radius:10px;' +
+  'padding:18px 22px;min-width:340px;max-width:520px;box-shadow:0 18px 50px rgba(0,0,0,.6)">' +
+  '<div style="font:600 15px \'Segoe UI\',sans-serif;color:#7fe7d4;margin-bottom:10px">Competition finished</div>' +
+  '<pre id="finishResults" style="font:12px Consolas,monospace;color:#dbe4f3;white-space:pre-wrap;margin:0 0 14px"></pre>' +
+  '<button id="finishOk" style="background:#2dd4bf;color:#06201c;border:0;border-radius:6px;' +
+  'padding:7px 22px;font:600 13px \'Segoe UI\',sans-serif;cursor:pointer">OK</button></div>';
+document.body.appendChild(finishModal);
+document.getElementById("finishOk").onclick = () => { finishModal.style.display = "none"; };
+function showFinishedModal() {
+  document.getElementById("finishResults").textContent =
+    cars.map((c, i) => `Car ${i + 1}: ${goalText(c)}; ` +
+      `Explored ${exploredCount(c).pct}% (${exploredCount(c).vis} cells); ` +
+      `Distance ${c.moves} cells; Turns ${c.turns}`).join("\n");
+  finishModal.style.display = "flex";
+}
+document.getElementById("buildTag").textContent = "build 2026-11-15.1";
 </script>
 </body>
 </html>
