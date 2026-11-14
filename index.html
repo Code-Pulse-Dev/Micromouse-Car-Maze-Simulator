@@ -1634,10 +1634,9 @@ function showUploadDialog(key) {
       "Car code upload — first select the car model",
       "Please first select the car model above\n" +
       "(ESP32-S3 Micromouse, TQD Micromouse JS2 or My car).\n\n" +
-      "Then open the GitHub adapters browser: navigate to CarController.py,\n" +
-      "double-click it and confirm — the upload then completes. A single\n" +
-      "click on CarController.py only shows its code. The Ready line names\n" +
-      "the adapter only after the code is uploaded.",
+      "Then open the GitHub adapters browser: navigate to CarController.py\n" +
+      "and click it once — the upload starts right away and the Ready line\n" +
+      "names the adapter once it is connected.",
       gitBtn + closeBtn);
   } else {
     const modelName = key === "mycar" ? "My car"
@@ -1646,9 +1645,9 @@ function showUploadDialog(key) {
       "Car code upload — choose the adapter on GitHub",
       "1. Open the GitHub adapters browser and navigate to the matching\n" +
       `   adapter folder for ${modelName}.\n` +
-      "2. Double-click CarController.py — a confirmation pops up; after\n" +
-      "   you confirm, the upload is successful. Single-clicking it will\n" +
-      "   only show the code.\n" +
+      "2. Click CarController.py once — the upload starts immediately.\n" +
+      "   The first upload also loads the Python runtime, so it can take\n" +
+      "   up to a minute. Watch the progress line in the browser.\n" +
       "3. The Ready line then shows which adapter is connected.\n\n" +
       "Prefer picking the code directly? Use Upload Adapter Folder on a\n" +
       "computer, or Choose CarController.py File on a phone or tablet\n" +
@@ -1687,9 +1686,8 @@ const ghModal = document.createElement("div");
 ghModal.style.cssText = "display:none;position:fixed;inset:0;background:rgba(4,10,20,.65);" +
   "z-index:70;align-items:center;justify-content:center";
 document.body.appendChild(ghModal);
-const ghConfirm = document.createElement("div");
-ghConfirm.style.cssText = "display:none;position:fixed;inset:0;background:rgba(4,10,20,.65);" +
-  "z-index:80;align-items:center;justify-content:center";
+const ghConfirm = document.createElement("div"); // kept for layout tests; unused
+ghConfirm.style.cssText = "display:none";
 document.body.appendChild(ghConfirm);
 const ghBtn = (id, label, style) =>
   '<button id="' + id + '" style="border-radius:6px;padding:7px 14px;font:600 13px \'Segoe UI\',sans-serif;cursor:pointer;' +
@@ -1779,7 +1777,7 @@ function ghRenderLogin() {
       const list = repos.map(r =>
         '<div data-repo="' + r.name + '" style="cursor:pointer;padding:7px 10px;border-radius:6px;' +
         'font:13px Consolas;color:#dbe4f3" onmouseover="this.style.background=\'#1d2d46\'" ' +
-        'onmouseout="this.style.background=\'transparent\'">▸ ' + r.name + '  <span style="color:#5a718f">(double-click to open)</span></div>').join("");
+        'onmouseout="this.style.background=\'transparent\'">▸ ' + r.name + '  <span style="color:#5a718f">(click to open)</span></div>').join("");
       ghCtx.note = "Double-click a repository to browse it.";
       ghModal.innerHTML =
         '<div style="background:#16233b;border:1px solid rgba(45,212,191,.35);border-radius:10px;' +
@@ -1790,7 +1788,7 @@ function ghRenderLogin() {
         '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">' + GH_BTN_CLOSE + '</div></div>';
       document.getElementById("ghClose").onclick = () => ghModal.style.display = "none";
       document.querySelectorAll("#ghList [data-repo]").forEach(el => {
-        el.ondblclick = () => { ghCtx.owner = user; ghCtx.repo = el.dataset.repo; ghCtx.path = ""; ghTryOpenRepo(); };
+        el.onclick = () => { ghCtx.owner = user; ghCtx.repo = el.dataset.repo; ghCtx.path = ""; ghTryOpenRepo(); };
       });
     } catch (e) {
       ghCtx.note = "GitHub error: " + e.message;
@@ -1828,7 +1826,7 @@ function ghRender(statusMsg) {
     (it.type === "dir" ? "#7fe7d4" : "#dbe4f3") + '" ' +
     'onmouseover="this.style.background=\'#1d2d46\'" onmouseout="this.style.background=\'transparent\'">' +
     (it.type === "dir" ? "▸ " : "· ") + it.name +
-    (it.name.toLowerCase() === "carcontroller.py" ? '  <span style="color:#ffd166">(double-click to upload)</span>' : '') +
+    (it.name.toLowerCase() === "carcontroller.py" ? '  <span style="color:#ffd166">(click to upload)</span>' : '') +
     '</div>';
   ghModal.innerHTML =
     '<div style="background:#16233b;border:1px solid rgba(45,212,191,.35);border-radius:10px;' +
@@ -1836,15 +1834,13 @@ function ghRender(statusMsg) {
     '<div style="font:600 15px \'Segoe UI\',sans-serif;color:#7fe7d4;margin-bottom:6px">GitHub adapters — ' + targetName + '</div>' +
     '<div style="font:12px \'Segoe UI\',sans-serif;color:#ffd166;background:rgba(255,212,102,.08);' +
     'border:1px solid rgba(255,212,102,.25);border-radius:6px;padding:8px 10px;margin-bottom:10px">' +
-    "Single-click a file: shows its code (preview only). " +
-    "Double-click CarController.py: a confirmation pops up — after you confirm, the upload completes." +
+    "Click a folder to open it. Click CarController.py: the upload starts right away — " +
+    "watch the progress line, then 'Upload successful — adapter connected' appears." +
     '</div>' +
     '<div style="font:13px Consolas;color:#9db4c5;margin-bottom:8px">' + ghCtx.owner + ' / ' + ghCtx.repo + crumbs + '</div>' +
     (ghCtx.note && !statusMsg ? '<div style="font:12px \'Segoe UI\',sans-serif;color:#7fe7d4;margin-bottom:8px">' + ghCtx.note + '</div>' : '') +
     '<div id="ghList" style="min-height:120px;max-height:260px;overflow:auto;border:1px solid #2a3c58;border-radius:6px;padding:4px">' +
     (statusMsg || (dirs.map(row).join("") + files.map(row).join("") || "Empty folder.")) + '</div>' +
-    '<pre id="ghPreview" style="display:none;font:11px Consolas;color:#9db4c5;white-space:pre-wrap;' +
-    'background:#0e1930;border:1px solid #2a3c58;border-radius:6px;padding:8px 10px;max-height:160px;overflow:auto;margin-top:10px"></pre>' +
     '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">' +
     GH_BTN_GIT + GH_BTN_CLOSE + '</div></div>';
   document.getElementById("ghClose").onclick = () => { ghModal.style.display = "none"; };
@@ -1854,43 +1850,13 @@ function ghRender(statusMsg) {
   document.querySelectorAll("#ghList [data-i]").forEach(el => {
     const it = ghCtx.items[+el.dataset.i];
     if (!it) return;
-    el.ondblclick = () => {
+    el.onclick = () => {
       if (it.type === "dir") { ghCtx.path = it.path; ghBrowse(); return; }
-      ghAskUpload(it);
-    };
-    if (it.type !== "dir") el.onclick = async () => {
-      const pre = document.getElementById("ghPreview");
-      pre.style.display = "block";
-      pre.textContent = "Loading code preview… (single click — preview only)";
-      try {
-        const src = await ghRaw(ghCtx.owner, ghCtx.repo, it.path);
-        pre.textContent = "— " + it.name + " (preview, not uploaded) —\n\n" + src.slice(0, 2500);
-      } catch (e) {
-        pre.textContent = "Preview failed: " + (e && e.message || e) +
-          "\nTip: use \"Open on GitHub\" to view the code on github.com instead.";
-      }
+      if (it.name.toLowerCase() === "carcontroller.py") { ghDoUpload(it); return; }
+      ghCtx.note = "Only CarController.py can be uploaded — click that file.";
+      ghRender();
     };
   });
-}
-function ghAskUpload(it) {
-  const targetName = ghCtx.target === "carA" ? "ESP32-S3 Micromouse"
-    : ghCtx.target === "carB" ? "TQD Micromouse JS2" : "My car";
-  ghConfirm.innerHTML =
-    '<div style="background:#16233b;border:1px solid rgba(45,212,191,.35);border-radius:10px;' +
-    'padding:18px 22px;min-width:360px;box-shadow:0 18px 50px rgba(0,0,0,.6)">' +
-    '<div style="font:600 15px \'Segoe UI\',sans-serif;color:#7fe7d4;margin-bottom:8px">Confirm adapter upload</div>' +
-    '<div style="font:13px \'Segoe UI\',sans-serif;color:#dbe4f3;white-space:pre-wrap;margin-bottom:14px">' +
-    "Upload " + it.path + "\nas the adapter code for " + targetName + "?</div>" +
-    '<div style="display:flex;gap:10px;justify-content:flex-end">' +
-    ghBtn("ghNo", "Cancel", "background:transparent;color:#9db4c5;border:1px solid #2a3c58") +
-    ghBtn("ghYes", "Confirm Upload", "background:#2dd4bf;color:#06201c;border:0") +
-    '</div></div>';
-  ghConfirm.style.display = "flex";
-  document.getElementById("ghNo").onclick = () => ghConfirm.style.display = "none";
-  document.getElementById("ghYes").onclick = async () => {
-    ghConfirm.style.display = "none";
-    await ghDoUpload(it);
-  };
 }
 async function ghDoUpload(it) {
   const key = ghCtx.target;
