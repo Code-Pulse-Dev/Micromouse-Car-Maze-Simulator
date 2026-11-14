@@ -112,13 +112,12 @@
 
     <div class="pane active" id="pane-movement">
       <div class="row"><label>Run Speed (Increase →)</label></div>
-      <input id="speed" type="range" min="120" max="500" step="10" value="300">
-      <div class="row" style="justify-content:flex-end"><span id="speedLbl">Speed 300 (220 ms)</span></div>
-      <div class="chk"><input type="checkbox" id="chkTurn"> <label for="chkTurn">Turn Delay</label></div>
+      <input id="speed" type="range" min="20" max="500" step="10" value="300">
+      <div class="row" style="justify-content:flex-end"><span id="speedLbl">Speed 300  (220 ms)</span></div>
+      <div class="chk"><input type="checkbox" id="chkTurn" checked> <label for="chkTurn">Turn Delay</label></div>
       <div class="chk"><input type="checkbox" id="chkColl" checked> <label for="chkColl">Collision Checking</label></div>
       <div class="chk"><input type="checkbox" id="chkTrail"> <label for="chkTrail">Show Movement Trail</label></div>
       <div class="chk"><input type="checkbox" id="chkPath" checked> <label for="chkPath">Show Path To Target (Dashed)</label></div>
-      <div class="chk"><input type="checkbox" id="chkFar" checked> <label for="chkFar">Sweep Far Cells First</label></div>
       <div class="hint"><b>Manual Controls:</b> Arrow keys / WASD drive car 1.
         <b>Space</b> = one Step. Click a cell edge to toggle a wall.</div>
     </div>
@@ -205,7 +204,14 @@
           <option>Arduino Web Editor</option>
           <option>PlatformIO (VS Code)</option>
           <option>VS Code</option>
-          <option>Other</option>
+          <option>Thonny (MicroPython)</option>
+          <option>Mu Editor (MicroPython)</option>
+          <option>PyCharm</option>
+          <option>Keil µVision</option>
+          <option>STM32CubeIDE</option>
+          <option>MPLAB X IDE</option>
+          <option>Tera Term</option>
+          <option>PuTTY</option>
         </select></div>
       <div class="hwRow"><label>USB port</label>
         <select id="hwPorts"><option value="-1">— scan ports —</option></select></div>
@@ -611,6 +617,7 @@ function quadrantWallMatrix(i) {
 }
 
 /* ============================ step / timers ============================ */
+let stepStart = 0;
 function step() {
   totalSteps++;
   for (const c of cars) if (!c.finished) {
@@ -619,27 +626,33 @@ function step() {
     else builtinDecide(c);
   }
   const anyTurn = cars.some(c => c.turned);
-  currentStepDur = stepMs + (turnDelay && anyTurn ? 150 : 0);
+  const base = Math.max(50, stepMs);
+  currentStepDur = base + (turnDelay && anyTurn ? base : 0);
   animT = 0;
+  stepStart = 0;                       // render loop restarts the easing
   if (recording) recordFrame();
   updateStats();
 }
 function stopTimers() {
-  if (timer) clearInterval(timer); timer = null;
+  if (timer) { clearInterval(timer); clearTimeout(timer); timer = null; }
   if (replayTimer) clearInterval(replayTimer); replayTimer = null;
   running = false;
 }
 function tick() {
-  animT = Math.min(1, animT + 16 / currentStepDur);
-  draw();
-  if (++statusTick % 6 === 0) updateStats();
-  if (animT >= 1 && cars.every(c => c.finished)) {
+  if (running && cars.length && cars.every(c => c.finished)) {
     stopTimers(); btnRun.textContent = "Run"; updateStats();
   }
 }
 function startLoop() {
   running = true; btnRun.textContent = "Pause";
-  timer = setInterval(() => { if (animT >= 1) step(); tick(); }, Math.max(30, Math.min(stepMs, currentStepDur)));
+  // Desktop flow: every action gets exactly its own duration, so a
+  // turning cell takes two delays and a straight cell takes one.
+  const pump = () => {
+    if (!running) return;
+    step();
+    timer = setTimeout(pump, Math.max(20, currentStepDur));
+  };
+  timer = setTimeout(pump, Math.max(20, currentStepDur));
 }
 
 /* ============================ rendering ============================ */
@@ -651,6 +664,15 @@ cv.style.width = (SIZE*CELL + PAD*2) + "px";
 cv.style.height = (SIZE*CELL + PAD*2) + "px";
 ctx.scale(DPR, DPR);
 let animT = 1;
+/* Continuous render loop, like the desktop's 25 ms redraw: the easing
+   advances every frame so cars glide cell-to-cell at the chosen speed. */
+function renderLoop(ts) {
+  if (!stepStart) stepStart = ts;
+  animT = Math.min(1, (ts - stepStart) / Math.max(50, currentStepDur));
+  draw();
+  requestAnimationFrame(renderLoop);
+}
+if (typeof requestAnimationFrame === "function") requestAnimationFrame(renderLoop);
 
 function floodMap(c) {
   if (floodCache) return floodCache;
@@ -670,7 +692,55 @@ function floodMap(c) {
   floodCache = D;
   return D;
 }
-const ease = t => 1 - (1 - t)*(1 - t);
+const ease = t => t*t*(3 - 2*t);            // smoothstep, same glide as the desktop
+/* Pixel-for-pixel port of the desktop _draw_car: teal board, four wheels,
+   rear display, MCU module and three range-sensor beams on the nose. */
+function drawCarBody(X, Y, angDeg, color, motion, phase, blocked, label) {
+  const a = angDeg * Math.PI / 180;
+  const pt = (lat, fwd) => [
+    X + fwd * Math.cos(a) - lat * Math.sin(a),
+    Y + fwd * Math.sin(a) + lat * Math.cos(a),
+  ];
+  const poly = pts => {
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+    ctx.closePath();
+  };
+  poly([pt(-9, -12), pt(9, -12), pt(10, 7), pt(0, 15), pt(-10, 7)]);
+  ctx.fillStyle = "#168f78"; ctx.fill();
+  ctx.strokeStyle = "#b8fff0"; ctx.lineWidth = 1; ctx.stroke();
+  for (const [lat, fwd] of [[-10, -7], [10, -7], [-10, 7], [10, 7]]) {
+    const [wx, wy] = pt(lat, fwd);
+    ctx.beginPath(); ctx.ellipse(wx, wy, 3, 4, a, 0, Math.PI * 2);
+    ctx.fillStyle = "#080d18"; ctx.fill();
+    ctx.strokeStyle = "#64748b"; ctx.stroke();
+  }
+  poly([pt(-6, 8), pt(6, 8), pt(6, 1), pt(-6, 1)]);
+  ctx.fillStyle = "#08111f"; ctx.fill();
+  ctx.strokeStyle = "#67e8f9"; ctx.stroke();
+  const [mx, my] = pt(0, -2);
+  ctx.save(); ctx.translate(mx, my); ctx.rotate(a);
+  ctx.fillStyle = "#334155"; ctx.fillRect(-4, -5, 8, 10);
+  ctx.strokeStyle = "#cbd5e1"; ctx.strokeRect(-4, -5, 8, 10);
+  ctx.restore();
+  let spread = 6, reach = 16, width = 1, dash = [2, 3];
+  if (blocked) { spread = 6; reach = 5; width = 2; dash = []; }
+  else if (motion === "move") {
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() * 2 * Math.PI / 500);
+    spread = 6; reach = 18 + Math.round(10 * pulse); width = 2; dash = [4, 3];
+  } else if (motion === "turn") {
+    spread = 8 + 4 * phase; reach = 24; width = 2; dash = [3, 2];
+  }
+  ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dash);
+  for (const lat of [-spread, 0, spread]) {
+    const [x1, y1] = pt(lat, 13), [x2, y2] = pt(lat * 2.2, 13 + reach);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.fillStyle = "#dbe4f3"; ctx.font = "bold 10px 'Segoe UI', sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(label, X, Y + 4);
+}
 function draw() {
   const W = SIZE*CELL + PAD*2;
   ctx.clearRect(0, 0, W, W);
@@ -747,15 +817,14 @@ function draw() {
 
   for (const c of cars) {
     const t = ease(animT);
-    const X = PAD + (c.px + (c.x - c.px)*t)*CELL + CELL/2;
-    const Y = PAD + (c.py + (c.y - c.py)*t)*CELL + CELL/2;
-    const a = c.pang + shortestDelta(c.pang, c.ang)*t;
-    ctx.save(); ctx.translate(X, Y); ctx.rotate(a*Math.PI/180);
-    ctx.fillStyle = CAR_COLORS[c.id];
-    ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-7, 7); ctx.lineTo(-3, 0); ctx.lineTo(-7, -7);
-    ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = "#0b1324"; ctx.lineWidth = 1.4; ctx.stroke();
-    ctx.restore();
+    const moving = c.px !== c.x || c.py !== c.y;
+    const turning = Math.abs(shortestDelta(c.pang, c.ang)) > 0.5;
+    const motion = moving ? "move" : turning ? "turn" : "idle";
+    const fx = c.px + (c.x - c.px) * t, fy = c.py + (c.y - c.py) * t;
+    const ang = c.pang + shortestDelta(c.pang, c.ang) * t;
+    const X = PAD + fx * CELL + CELL / 2, Y = PAD + fy * CELL + CELL / 2;
+    drawCarBody(X, Y, ang, CAR_COLORS[c.id], motion, t,
+                walls[c.y][c.x][c.dir], String(c.id + 1));
   }
 }
 function shortestDelta(a, b) { return ((b - a + 540) % 360) - 180; }
@@ -841,14 +910,13 @@ document.querySelectorAll('input[name=mode]').forEach(r => r.onchange = e => {
 });
 document.getElementById("speed").oninput = e => {
   speedVal = +e.target.value;
-  stepMs = Math.round(speedVal * 220 / 300);
-  speedLbl.textContent = `Speed ${speedVal} (${stepMs} ms)`;
+  stepMs = Math.max(20, 520 - speedVal);      // same mapping as the desktop app
+  speedLbl.textContent = `Speed ${speedVal}  (${stepMs} ms)`;
 };
 document.getElementById("chkTurn").onchange = e => turnDelay = e.target.checked;
 document.getElementById("chkColl").onchange = e => collisionChecking = e.target.checked;
 document.getElementById("chkTrail").onchange = e => { trails = e.target.checked; draw(); };
 document.getElementById("chkPath").onchange = e => { showPath = e.target.checked; draw(); };
-document.getElementById("chkFar").onchange = e => sweepFar = e.target.checked;
 
 document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
   document.querySelectorAll(".tabs button").forEach(x => x.classList.remove("active"));
@@ -1075,9 +1143,18 @@ async function selectCarModel(key) {
   if (!src && PRESETS[key]) {
     readyEl(key).textContent = "Loading simulation adapter…";
     try {
-      const res = await fetch(encodeURI(PRESETS[key].path));
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      src = await res.text();
+      try {
+        const res = await fetch(encodeURI(PRESETS[key].path));
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        src = await res.text();
+      } catch (e1) {
+        // fallback straight from GitHub so the adapters work anywhere
+        const raw = "https://raw.githubusercontent.com/Code-Pulse-Dev/Micromouse-Car-Maze-Simulator/main/" +
+                    PRESETS[key].path;
+        const res2 = await fetch(encodeURI(raw));
+        if (!res2.ok) throw new Error("HTTP " + res2.status);
+        src = await res2.text();
+      }
       MODEL_SOURCES[key] = src;
     } catch (e) {
       readyEl(key).textContent =
