@@ -123,11 +123,17 @@ class CarController:
         return dist
 
     def _gradient_step(self, state, dist, position):
-        """objectGoto(): one step down the distance gradient."""
+        """objectGoto(): one step down the distance gradient.
+
+        Directions are tried in the car's own priority order - forward,
+        left, right, back - so the car keeps driving straight whenever the
+        gradient allows it, exactly like the built-in scenario, instead of
+        turning at every junction where a side direction also descends."""
         here = dist[position]
         walls = state["walls"]
         best = None
-        for d in range(4):
+        for relative in (0, 3, 1, 2):
+            d = (state["direction"] + relative) % 4
             if walls[position[1]][position[0]][d]:
                 continue
             neighbour = (position[0] + DX[d], position[1] + DY[d])
@@ -177,10 +183,16 @@ class CarController:
         if open_dirs:
             if state.get("sweep_order", "far") == "far":
                 # Clear the cells farthest from the goal first, so the goal
-                # area and the final goal run come last.
+                # area and the final goal run come last. Ties prefer the
+                # car's own direction order (forward, left, right, back),
+                # matching the built-in sweep so the car does not turn
+                # away from a corridor it could simply continue down.
                 dist_goal = self._flood(state, goal, allowed)
                 best = None
-                for d in open_dirs:
+                for relative in (0, 3, 1, 2):
+                    d = (state["direction"] + relative) % 4
+                    if d not in open_dirs:
+                        continue
                     neighbour = (position[0] + DX[d], position[1] + DY[d])
                     value = dist_goal.get(neighbour, 10 ** 6)
                     if best is None or value > best[0]:
