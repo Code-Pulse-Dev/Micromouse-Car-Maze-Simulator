@@ -2055,7 +2055,56 @@ function showFinishedModal() {
       `Distance ${c.moves} cells; Turns ${c.turns}`).join("\n");
   finishModal.style.display = "flex";
 }
-document.getElementById("buildTag").textContent = "build 2026-11-15.5";
+
+/* ---------- rotate-to-portrait hint for phones and small tablets ----------
+   When the page is opened on a touch device held sideways (landscape with a
+   small viewport height), an overlay asks the user to turn the device to
+   portrait. The moment they rotate, the overlay disappears on its own and
+   every panel is laid out for the portrait screen. */
+const rotateOverlay = document.createElement("div");
+rotateOverlay.style.cssText = "display:none;position:fixed;inset:0;z-index:90;" +
+  "background:rgba(6,12,24,.96);align-items:center;justify-content:center;text-align:center";
+rotateOverlay.innerHTML =
+  '<div style="max-width:420px;padding:24px">' +
+  '<div id="rotPhone" style="width:56px;height:92px;margin:0 auto 18px;border:3px solid #2dd4bf;' +
+  'border-radius:10px;position:relative;animation:rotHint 2.4s ease-in-out infinite">' +
+  '<div style="position:absolute;left:50%;bottom:7px;width:14px;height:2px;background:#2dd4bf;' +
+  'transform:translateX(-50%);border-radius:2px"></div></div>' +
+  '<div style="font:600 17px \'Segoe UI\',sans-serif;color:#7fe7d4;margin-bottom:10px">' +
+  'Turn your device to portrait</div>' +
+  '<div style="font:14px \'Segoe UI\',sans-serif;color:#dbe4f3;line-height:1.5;margin-bottom:16px">' +
+  'You are on a phone or tablet held sideways. Rotate it upright (portrait) for the best view — ' +
+  'the maze and every panel will then fit your screen automatically.' +
+  '</div>' +
+  '<button id="rotSkip" style="background:transparent;color:#9db4c5;border:1px solid #2a3c58;' +
+  'border-radius:6px;padding:7px 16px;font:600 13px \'Segoe UI\',sans-serif;cursor:pointer">' +
+  'Continue in landscape anyway</button>' +
+  '</div>';
+document.body.appendChild(rotateOverlay);
+const rotStyle = document.createElement("style");
+rotStyle.textContent =
+  "@keyframes rotHint { 0%,20% { transform:rotate(0deg) } 45%,75% { transform:rotate(-90deg) } " +
+  "100% { transform:rotate(0deg) } }";
+document.head.appendChild(rotStyle);
+let rotateDismissed = false;
+document.getElementById("rotSkip").onclick = () => {
+  rotateDismissed = true;
+  rotateOverlay.style.display = "none";
+};
+function updateRotateHint() {
+  const touch = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) ||
+    "ontouchstart" in window;
+  const landscape = window.innerWidth > window.innerHeight;
+  const shortSide = Math.min(window.innerWidth, window.innerHeight);
+  // phones / small tablets held sideways: short side ~ below 560 px
+  const show = touch && landscape && shortSide < 560 && !rotateDismissed;
+  rotateOverlay.style.display = show ? "flex" : "none";
+}
+window.addEventListener("resize", updateRotateHint);
+window.addEventListener("orientationchange", () => setTimeout(updateRotateHint, 120));
+updateRotateHint();
+
+document.getElementById("buildTag").textContent = "build 2026-11-15.6";
 </script>
 </body>
 </html>
