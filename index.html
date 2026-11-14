@@ -777,6 +777,27 @@ _CLS = _NS["CarController"]
     });
   }
 }
+/* ---------- adapter identity check ----------
+   The ESP32-S3 and TQD adapters are only accepted for their own car type:
+   uploading (or connecting from GitHub) the wrong adapter is rejected
+   instead of silently driving the wrong car. "My car" accepts any code. */
+function adapterKindOf(src) {
+  if (/ESP32[\s_-]*S3|ESP32/i.test(src)) return "esp32";
+  if (/TQD|JS2|MicroPython/i.test(src)) return "tqd";
+  return "unknown";
+}
+function adapterMismatch(key, src) {
+  if (key === "mycar") return null;
+  const want = key === "carA" ? "esp32" : "tqd";
+  const kind = adapterKindOf(String(src));
+  if (kind === want) return null;
+  const have = key === "carA" ? "ESP32-S3 Micromouse" : "TQD Micromouse JS2";
+  const what = kind === "tqd" ? "the TQD Micromouse JS2 adapter"
+    : kind === "esp32" ? "the ESP32-S3 Micromouse adapter"
+    : "code that is not a recognised ESP32-S3 or TQD adapter";
+  return "Wrong adapter rejected: " + what + " cannot be used for " + have +
+    ". Select the matching car type above (or My car for custom code), then upload again.";
+}
 function initControllers() {
   if (!pyodide || !pyClassActive()) return;
   try {
@@ -811,8 +832,14 @@ function adapterDecide(c) {
   catch (e) { telemetry.textContent = `Car ${c.id + 1} code error: ${e.message}`; return false; }
   if (action === "left" || action === "right" || action === "back") {
     const turn = { left: 3, right: 1, back: 2 }[action];
-    c.pang = ANGLES[c.dir]; c.dir = (c.dir + turn) % 4; c.ang = ANGLES[c.dir];
-    c.turns += 1; c.turned = true;
+    const newDir = (c.dir + turn) % 4;
+    if (!turnDelay) {
+      // identical pacing to the built-in scenario: with Turn Delay off,
+      // a turn and the following move happen in the same tick
+      const nx = c.x + DX[newDir], ny = c.y + DY[newDir];
+      if (!outside(nx, ny) && !walls[c.y][c.x][newDir]) { doMove(c, newDir); return true; }
+    }
+    doTurn(c, newDir);
     c.plan = [];
     return true;
   }
@@ -1642,7 +1669,10 @@ function showUploadDialog(key) {
       "2. Click CarController.py once — the upload starts immediately.\n" +
       "   The first upload also loads the Python runtime, so it can take\n" +
       "   up to a minute. Watch the progress line in the browser.\n" +
-      "3. The Ready line then shows which adapter is connected.\n\n" +
+      "3. The Ready line then shows which adapter is connected.\n" +
+      "Note: the wrong adapter is rejected — ESP32-S3 code connects only\n" +
+      "to the ESP32-S3 car, TQD code only to the TQD car. 'My car'\n" +
+      "accepts any code.\n\n" +
       "Prefer picking the code directly? Use Upload Adapter Folder on a\n" +
       "computer, or Choose CarController.py File on a phone or tablet\n" +
       "(folder pickers do not work on most mobile devices).",
@@ -1858,6 +1888,13 @@ async function ghDoUpload(it) {
     ghCtx.note = "Fetching " + it.path + "…";
     ghRender();
     const src = await ghRaw(ghCtx.owner, ghCtx.repo, it.path);
+    const bad = adapterMismatch(key, src);
+    if (bad) {
+      readyEl(key).textContent = bad;
+      ghCtx.note = bad;
+      ghRender();
+      return;
+    }
     ghCtx.note = "Installing adapter — the first install downloads the Python runtime, this can take up to a minute…";
     ghRender();
     readyEl(key).textContent = "Installing adapter code for " + targetLabel(key) + "…";
@@ -1903,6 +1940,13 @@ async function applyUploadFiles(fileList, source) {
   const where = (ctrl.webkitRelativePath || ctrl.name);
   try {
     const srcText = await ctrl.text();
+    const bad = adapterMismatch(key, srcText);
+    if (bad) {
+      readyEl(key).textContent = bad;
+      codeStatus.textContent = bad;
+      telemetry.textContent = bad;
+      return;
+    }
     MODEL_SOURCES[key] = srcText;
     const folder = where.includes("/") ? where.split("/")[0]
       : ctrl.name.replace(/\.py$/i, "") || "Uploaded car";
