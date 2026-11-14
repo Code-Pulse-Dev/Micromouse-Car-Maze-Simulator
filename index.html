@@ -258,7 +258,6 @@ const RESERVED = [
   new Set(["7,9","7,10","7,11","7,12"]),
   new Set(["8,9","8,10","8,11","8,12"]),
 ];
-const TURN_COST = 0.55;
 
 /* ============================ maze state ============================ */
 const cloneMaze = m => m.map(row => row.map(cell => cell.slice()));
@@ -300,7 +299,7 @@ function makeCar(i) {
   const [x, y, d] = STARTS[i];
   return {
     id: i, x, y, dir: d, phase: 1, finished: false, finishStep: null, target: null,
-    goalTime: null,
+    goalTime: null, phase_borrowed: false,
     known: Array.from({length: SIZE}, () => Array.from({length: SIZE}, () => [false,false,false,false])),
     visited: new Set([y*SIZE + x]), moves: 0, turns: 0, plan: [],
     px: x, py: y, pang: ANGLES[d], ang: ANGLES[d], turned: false, stopped: false,
@@ -313,17 +312,12 @@ function reset(keepMaze) {
   raceStartedAt = null; raceFinishedAt = null;
   btnRun.textContent = "Run";
   floodCache = null;
-  if (mode === "shortest") for (const c of cars) loadFullMap(c);
   if (pyControllersActive()) initControllers();
   telemetry.textContent = "";
   draw(); updateStats();
 }
 
 /* ============================ map helpers ============================ */
-function loadFullMap(c) {
-  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++)
-    for (let d = 0; d < 4; d++) c.known[y][x][d] = walls[y][x][d];
-}
 function sense(c) {
   for (let d = 0; d < 4; d++) {
     const nx = c.x + DX[d], ny = c.y + DY[d];
@@ -331,159 +325,329 @@ function sense(c) {
     if (inb(nx, ny)) c.known[ny][nx][OPP[d]] = walls[ny][nx][OPP[d]];
   }
 }
-function forbidFor(c) {
-  const f = new Set();
-  for (let i = 0; i < 4; i++) if (i !== c.id) RESERVED[i].forEach(k => f.add(k));
-  if (mode === "explore" && c.phase < 2) {
-    RESERVED[c.id].forEach(k => f.add(k));
-    if (c.phase === 1) {
-      for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++)
-        if (!inZone(c.id, x, y)) f.add(cellKey(x, y));
-    }
-  }
-  return f;
-}
-function canGo(c, x, y, d, f) {
-  if (c.known[y][x][d]) return false;
-  const nx = x + DX[d], ny = y + DY[d];
-  if (!inb(nx, ny)) return false;
-  return !f.has(cellKey(nx, ny));
-}
-
-/* ============================ planning ============================ */
-function planFrom(c, sx, sy, sdir, goals, f) {
-  const idx = (x,y,d) => ((y*SIZE + x)*4 + d);
-  const D = new Float64Array(SIZE*SIZE*4).fill(Infinity);
-  const prev = new Int32Array(SIZE*SIZE*4).fill(-1);
-  const s = idx(sx, sy, sdir); D[s] = 0;
-  const pq = [[0, s]];
-  const pop = () => { let bi = 0; for (let i = 1; i < pq.length; i++) if (pq[i][0] < pq[bi][0]) bi = i;
-                      return pq.splice(bi, 1)[0]; };
-  let end = -1;
-  while (pq.length) {
-    const [d0, st] = pop();
-    if (d0 > D[st]) continue;
-    const x = (st >> 2) % SIZE, y = Math.floor((st >> 2) / SIZE), dir = st & 3;
-    if (goals.has(cellKey(x, y))) { end = st; break; }
-    const push = (nd, cost) => {
-      const ns = idx(x, y, nd);
-      if (d0 + cost < D[ns]) { D[ns] = d0 + cost; prev[ns] = st; pq.push([D[ns], ns]); }
-    };
-    push((dir+1)&3, TURN_COST); push((dir+3)&3, TURN_COST); push((dir+2)&3, 2*TURN_COST);
-    if (canGo(c, x, y, dir, f)) {
-      const nx = x + DX[dir], ny = y + DY[dir];
-      const ns = idx(nx, ny, dir);
-      if (d0 + 1 < D[ns]) { D[ns] = d0 + 1; prev[ns] = st; pq.push([D[ns], ns]); }
-    }
-  }
-  if (end < 0) return null;
-  const states = []; let st = end;
-  while (st !== s && st >= 0) { states.unshift(st); st = prev[st]; }
-  const path = []; let turns = 0, firstDir = -1, prevDir = sdir, px = sx, py = sy;
-  for (const stt of states) {
-    const x = (stt >> 2) % SIZE, y = Math.floor((stt >> 2) / SIZE), dir = stt & 3;
-    if (dir !== prevDir) turns += (dir === ((prevDir + 2) & 3)) ? 2 : 1;
-    if (x !== px || y !== py) { if (firstDir < 0) firstDir = dir; path.push([x, y]); }
-    prevDir = dir; px = x; py = y;
-  }
-  return { path, firstDir, turns };
-}
-function bfsHops(c, sx, sy, f) {
+/* desktop _calculate_flood: BFS distances from a set of source cells */
+function floodDist(map, sources) {
   const D = new Int16Array(SIZE*SIZE).fill(-1);
-  const q = [[sx, sy]]; D[sy*SIZE + sx] = 0;
-  while (q.length) {
-    const [x, y] = q.shift();
+  const q = [];
+  for (const [sx, sy] of sources) { D[sy*SIZE + sx] = 0; q.push([sx, sy]); }
+  for (let h = 0; h < q.length; h++) {
+    const [x, y] = q[h];
     for (let d = 0; d < 4; d++) {
-      if (!canGo(c, x, y, d, f)) continue;
+      if (map[y][x][d]) continue;
       const nx = x + DX[d], ny = y + DY[d];
-      if (D[ny*SIZE + nx] < 0) { D[ny*SIZE + nx] = D[y*SIZE + x] + 1; q.push([nx, ny]); }
+      if (!inb(nx, ny) || D[ny*SIZE + nx] >= 0) continue;
+      D[ny*SIZE + nx] = D[y*SIZE + x] + 1;
+      q.push([nx, ny]);
     }
   }
   return D;
 }
-
-/* ============================ built-in controller ============================ */
-function builtinDecide(c) {
-  const f = forbidFor(c);
-  if (mode === "shortest") {
-    const p = planFrom(c, c.x, c.y, c.dir, new Set([cellKey(...GOALS_CAR[c.id])]), f);
-    if (!p) return;
-    applyPlan(c, p);
-    return;
-  }
-  const hops = bfsHops(c, c.x, c.y, f);
-  if (c.phase < 2) {
-    let t = c.target;
-    const valid = t && !c.visited.has(t[1]*SIZE + t[0]) &&
-                  !RESERVED[c.id].has(cellKey(...t)) && hops[t[1]*SIZE + t[0]] >= 0;
-    if (!valid) {
-      let best = null, bd = sweepFar ? -1 : Infinity;
-      for (let y = ZONES[c.id][2]; y <= ZONES[c.id][3]; y++)
-        for (let x = ZONES[c.id][0]; x <= ZONES[c.id][1]; x++) {
-          const k = y*SIZE + x, kk = cellKey(x, y);
-          if (c.visited.has(k) || RESERVED[c.id].has(kk) || hops[k] < 0) continue;
-          if (sweepFar ? hops[k] > bd : hops[k] < bd) { bd = hops[k]; best = [x, y]; }
-        }
-      c.target = best;
-      if (!best) { c.phase = 2; c.target = null; return builtinDecide(c); }
-    }
-    const p = planFrom(c, c.x, c.y, c.dir, new Set([cellKey(...c.target)]), f);
-    if (!p) { c.target = null; c.visited.add(c.y*SIZE + c.x); return; }
-    applyPlan(c, p);
-  } else {
-    const pending = new Set();
-    RESERVED[c.id].forEach(k => { const [x, y] = k.split(",").map(Number);
-                                  if (!c.visited.has(y*SIZE + x)) pending.add(k); });
-    const zoneLeft = [];
-    for (let y = ZONES[c.id][2]; y <= ZONES[c.id][3]; y++)
-      for (let x = ZONES[c.id][0]; x <= ZONES[c.id][1]; x++) {
-        const k = y*SIZE + x;
-        if (!c.visited.has(k) && hops[k] >= 0) zoneLeft.push([x, y]);
-      }
-    const atGoal = c.x === GOALS_CAR[c.id][0] && c.y === GOALS_CAR[c.id][1];
-    if (atGoal && !pending.size && !zoneLeft.length) {
-      c.finished = true; c.finishStep = totalSteps; return;
-    }
-    let t = c.target, valid;
-    if (t) {
-      const [tx, ty] = t, kk = cellKey(tx, ty);
-      valid = !c.visited.has(ty*SIZE + tx) && hops[ty*SIZE + tx] >= 0 &&
-              (pending.has(kk) || (!pending.size && inZone(c.id, tx, ty)));
-    } else valid = false;
-    if (!valid) {
-      let bestK = null, bd = Infinity;
-      const pool = pending.size ? [...pending].map(k => k.split(",").map(Number))
-                                : (zoneLeft.length ? zoneLeft : [GOALS_CAR[c.id].slice()]);
-      for (const [x, y] of pool)
-        if (hops[y*SIZE + x] >= 0 && hops[y*SIZE + x] < bd) { bd = hops[y*SIZE + x]; bestK = [x, y]; }
-      c.target = bestK || GOALS_CAR[c.id].slice();
-    }
-    const p = planFrom(c, c.x, c.y, c.dir, new Set([cellKey(...c.target)]), f);
-    if (!p) return;
-    applyPlan(c, p);
+function sealCell(map, x, y) {
+  for (let d = 0; d < 4; d++) {
+    map[y][x][d] = true;
+    const bx = x + DX[d], by = y + DY[d];
+    if (inb(bx, by)) map[by][bx][OPP[d]] = true;
   }
 }
-function applyPlan(c, p) {
-  if (!p.path.length) return;
-  const nxt = p.path[0];
-  const absDir = nxt[1] < c.y ? 0 : nxt[0] > c.x ? 1 : nxt[1] > c.y ? 2 : 3;
-  c.plan = p.path;
-  if (absDir !== c.dir) {
-    if (turnDelay) {
-      // Desktop behaviour: the car pivots on the spot for a whole tick
-      // and only drives into the next cell on the following tick.
-      c.pang = ANGLES[c.dir]; c.dir = absDir; c.ang = ANGLES[absDir];
-      c.turns += 1; c.turned = true;
-      return;
-    }
-    c.turns += 1;
-  }
-  c.turned = false;
+function doTurn(c, absDir) {
+  c.pang = ANGLES[c.dir]; c.dir = absDir; c.ang = ANGLES[absDir];
+  c.turns++; c.turned = true; c.plan = [];
+}
+function doMove(c, absDir) {
+  if (absDir !== c.dir) c.turns++;
   c.pang = ANGLES[c.dir]; c.dir = absDir; c.ang = ANGLES[absDir];
   c.px = c.x; c.py = c.y;
-  c.x = nxt[0]; c.y = nxt[1];
-  c.moves++;
+  c.x += DX[absDir]; c.y += DY[absDir];
+  c.moves++; c.turned = false;
   c.visited.add(c.y*SIZE + c.x);
+  c.plan = [];
+}
+
+/* ============ desktop _move_car port — the built-in four-car logic ============ */
+function desktopMove(c) {
+  const known = c.known, visited = c.visited;
+  const z = ZONES[c.id];
+  const inZ = (x, y) => x >= z[0] && x <= z[1] && y >= z[2] && y <= z[3];
+  const allowed = new Set();
+  for (let y = z[2]; y <= z[3]; y++) for (let x = z[0]; x <= z[1]; x++) allowed.add(y*SIZE + x);
+  const goal = GOALS_CAR[c.id], goalK = goal[1]*SIZE + goal[0];
+  const explore = mode === "explore";
+  const sweepDone = explore ? sweepComplete(c) : true;
+  const dg = (x, y) => { const v = distGoal[y*SIZE + x]; return v < 0 ? SIZE*SIZE : v; };
+  let distGoal;
+
+  if (explore && sweepDone) {
+    // Sweep complete: final goal run on the REAL map with the quadrant
+    // boundary closed, descending strictly (desktop lines 1617-1662).
+    const closed = walls.map(row => row.map(cell => cell.slice()));
+    for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
+      const inside = inZ(x, y);
+      for (let d = 0; d < 4; d++) {
+        const nx = x + DX[d], ny = y + DY[d];
+        if (!inside || !inb(nx, ny) || !inZ(nx, ny)) closed[y][x][d] = true;
+      }
+    }
+    const dist = floodDist(closed, [goal]);
+    const here = dist[c.y*SIZE + c.x] < 0 ? SIZE*SIZE : dist[c.y*SIZE + c.x];
+    let best = null;
+    for (const rel of [0, 3, 1, 2]) {
+      const abs = (c.dir + rel) & 3;
+      if (known[c.y][c.x][abs]) continue;
+      const nx = c.x + DX[abs], ny = c.y + DY[abs], k = ny*SIZE + nx;
+      if (dist[k] >= 0 && allowed.has(k) && dist[k] < here && (best === null || dist[k] < best[0]))
+        best = [dist[k], abs];
+    }
+    if (!best) return false;
+    if (best[1] !== c.dir && turnDelay) { doTurn(c, best[1]); return true; }
+    doMove(c, best[1]); return true;
+  }
+
+  if (explore) {
+    // Scenario 1: systematic quadrant sweep (desktop lines 1664-1984).
+    const goalOpen = known.map(row => row.map(cell => cell.slice()));
+    for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
+      const inside = inZ(x, y);
+      for (let d = 0; d < 4; d++) {
+        const nx = x + DX[d], ny = y + DY[d];
+        if (!inside || !inb(nx, ny) || !inZ(nx, ny)) goalOpen[y][x][d] = true;
+      }
+    }
+    distGoal = floodDist(goalOpen, [goal]);
+    const reserved = RESERVED[c.id];
+    const sweepMap = goalOpen.map(row => row.map(cell => cell.slice()));
+    const blockedCells = new Set(reserved);
+    if (reserved.size) blockedCells.add(cellKey(goal[0], goal[1]));
+    for (const k of blockedCells) {
+      const [rx, ry] = k.split(",").map(Number);
+      sealCell(sweepMap, rx, ry);
+    }
+    const goalSealed = goalOpen.map(row => row.map(cell => cell.slice()));
+    if (reserved.size) sealCell(goalSealed, goal[0], goal[1]);
+
+    // Car 2 clears the top half of its quadrant completely first.
+    const topMid = Math.floor((z[2] + z[3] + 1) / 2);
+    const topAllowed = new Set([...allowed].filter(k => Math.floor(k / SIZE) < topMid));
+    const topUnvisited = [...topAllowed].filter(k => {
+      const x = k % SIZE, y = Math.floor(k / SIZE);
+      return !visited.has(k) && k !== goalK && !reserved.has(cellKey(x, y));
+    });
+    let topPhase = false, borrowed = !!c.phase_borrowed, phaseMap = null;
+    if (c.id === 1 && topUnvisited.length) {
+      phaseMap = sweepMap.map(row => row.map(cell => cell.slice()));
+      for (let x = 0; x < SIZE; x++) {
+        phaseMap[topMid][x][0] = true;
+        phaseMap[topMid - 1][x][2] = true;
+      }
+      const reach = floodDist(phaseMap, [[c.x, c.y]]);
+      if (topUnvisited.some(k => reach[k] >= 0)) topPhase = true;
+    }
+    if (borrowed && c.id === 1 && topUnvisited.length) topPhase = true;
+    const region = topPhase ? topAllowed : allowed;
+
+    // 1. take a direction that leads somewhere new
+    let candidates = [];
+    for (const rel of [0, 3, 1, 2]) {
+      const abs = (c.dir + rel) & 3;
+      if (known[c.y][c.x][abs]) continue;
+      const nx = c.x + DX[abs], ny = c.y + DY[abs], k = ny*SIZE + nx;
+      if (!region.has(k) || k === goalK) continue;
+      if (reserved.has(cellKey(nx, ny)) || visited.has(k)) continue;
+      candidates.push([rel, abs, nx, ny]);
+    }
+    let crossing = false;
+    if (!candidates.length && topPhase && !borrowed) {
+      const abs = c.dir;
+      if (!known[c.y][c.x][abs]) {
+        const nx = c.x + DX[abs], ny = c.y + DY[abs], k = ny*SIZE + nx;
+        if (allowed.has(k) && !visited.has(k) && k !== goalK && !reserved.has(cellKey(nx, ny))) {
+          candidates.push([0, abs, nx, ny]); crossing = true;
+        }
+      }
+    }
+    if (candidates.length) {
+      if (sweepFar) candidates.sort((a, b) =>
+        ((a[0] !== 0) - (b[0] !== 0)) || (dg(b[2], b[3]) - dg(a[2], a[3])) || (a[0] - b[0]));
+      const abs = candidates[0][1], ny = candidates[0][3];
+      if (abs !== c.dir) { doTurn(c, abs); return true; }
+      if (crossing) c.phase_borrowed = true;
+      else if (ny < topMid) c.phase_borrowed = false;
+      doMove(c, abs); return true;
+    }
+
+    // 2. no unexplored neighbour: walk to the farthest remaining frontier
+    const frontierCells = (walkMap, regionSet) => {
+      const fromHere = floodDist(walkMap, [[c.x, c.y]]);
+      const found = [];
+      for (let k = 0; k < SIZE*SIZE; k++) {
+        const v = fromHere[k];
+        if (v < 0) continue;
+        const x = k % SIZE, y = Math.floor(k / SIZE);
+        for (let d = 0; d < 4; d++) {
+          if (known[y][x][d]) continue;
+          const nx = x + DX[d], ny = y + DY[d], nk = ny*SIZE + nx;
+          if (!regionSet.has(nk)) continue;
+          if (nk === goalK || visited.has(nk)) continue;
+          if (reserved.has(cellKey(nx, ny))) continue;
+          found.push([v, -dg(x, y), k]);
+          break;
+        }
+      }
+      return found;
+    };
+    let walkMap, frontier;
+    if (topPhase) {
+      walkMap = borrowed ? sweepMap : phaseMap;
+      frontier = frontierCells(walkMap, region);
+    } else {
+      walkMap = sweepMap;
+      frontier = frontierCells(sweepMap, allowed);
+    }
+    if (!frontier.length) {
+      const leftover = [...allowed].filter(k => {
+        const x = k % SIZE, y = Math.floor(k / SIZE);
+        return !visited.has(k) && !reserved.has(cellKey(x, y)) && k !== goalK;
+      });
+      if (leftover.length) { frontier = frontierCells(goalOpen, allowed); walkMap = goalOpen; }
+    }
+    if (!frontier.length && reserved.size) {
+      // everything else swept: drive into the held-back corridor,
+      // far end first (4 -> 3 -> 2 -> 1 -> goal)
+      let corridorTarget = null, cd = 0;
+      for (const k of reserved) {
+        const [rx, ry] = k.split(",").map(Number);
+        const kk = ry*SIZE + rx;
+        if (visited.has(kk)) continue;
+        const dv = distGoal[kk] < 0 ? 0 : distGoal[kk];
+        if (corridorTarget === null || dv > cd) { corridorTarget = [rx, ry]; cd = dv; }
+      }
+      if (corridorTarget) {
+        let distCorr = floodDist(goalSealed, [corridorTarget]);
+        let hereV = distCorr[c.y*SIZE + c.x];
+        if (hereV < 0) { distCorr = floodDist(goalOpen, [corridorTarget]); hereV = distCorr[c.y*SIZE + c.x]; }
+        if (hereV >= 0) {
+          let best = null;
+          for (const rel of [0, 3, 1, 2]) {
+            const abs = (c.dir + rel) & 3;
+            if (known[c.y][c.x][abs]) continue;
+            const nx = c.x + DX[abs], ny = c.y + DY[abs];
+            if (!allowed.has(ny*SIZE + nx)) continue;
+            const v = distCorr[ny*SIZE + nx];
+            if (v >= 0 && v < hereV && (best === null || v < best[0])) best = [v, abs];
+          }
+          if (best) {
+            if (best[1] !== c.dir) { doTurn(c, best[1]); return true; }
+            doMove(c, best[1]); return true;
+          }
+        }
+      }
+    }
+    if (frontier.length) {
+      let target = null;
+      for (const f of frontier)
+        if (target === null || f[1] < target[1] || (f[1] === target[1] && f[0] < target[0])) target = f;
+      const txy = target[2], tx = txy % SIZE, ty = Math.floor(txy / SIZE);
+      let distT = floodDist(walkMap, [[tx, ty]]);
+      let hereV = distT[c.y*SIZE + c.x];
+      if (hereV < 0 && topPhase) { distT = floodDist(goalOpen, [[tx, ty]]); hereV = distT[c.y*SIZE + c.x]; }
+      if (hereV < 0) return false;
+      let best = null;
+      for (const rel of [0, 3, 1, 2]) {
+        const abs = (c.dir + rel) & 3;
+        if (known[c.y][c.x][abs]) continue;
+        const nx = c.x + DX[abs], ny = c.y + DY[abs];
+        if (!allowed.has(ny*SIZE + nx)) continue;
+        const v = distT[ny*SIZE + nx];
+        if (v >= 0 && v < hereV && (best === null || v < best[0])) best = [v, abs];
+      }
+      if (!best) return false;
+      if (best[1] !== c.dir) { doTurn(c, best[1]); return true; }
+      doMove(c, best[1]); return true;
+    }
+
+    // frontier empty: sweep done, drive the final goal run on known walls
+    const distF = floodDist(goalOpen, [goal]);
+    const hereV = distF[c.y*SIZE + c.x];
+    if (hereV < 0) return false;
+    let best = null;
+    for (const rel of [0, 3, 1, 2]) {
+      const abs = (c.dir + rel) & 3;
+      if (known[c.y][c.x][abs]) continue;
+      const nx = c.x + DX[abs], ny = c.y + DY[abs];
+      if (!allowed.has(ny*SIZE + nx)) continue;
+      const v = distF[ny*SIZE + nx];
+      if (v >= 0 && v < hereV && (best === null || v < best[0])) best = [v, abs];
+    }
+    if (!best) return false;
+    if (best[1] !== c.dir) { doTurn(c, best[1]); return true; }
+    doMove(c, best[1]); return true;
+  }
+
+  // Scenario 2: speed run on the real map, strictly descending flood
+  const realW = quadrantWallMatrix(c.id);
+  const flood = floodDist(realW, [goal]);
+  const cur = flood[c.y*SIZE + c.x] < 0 ? SIZE*SIZE : flood[c.y*SIZE + c.x];
+  let best = null;
+  for (const rel of [0, 3, 1, 2]) {
+    const abs = (c.dir + rel) & 3;
+    if (walls[c.y][c.x][abs]) continue;
+    const nx = c.x + DX[abs], ny = c.y + DY[abs], k = ny*SIZE + nx;
+    if (!allowed.has(k)) continue;
+    const v = flood[k] < 0 ? SIZE*SIZE : flood[k];
+    if (v < cur && (best === null || v < best[0])) best = [v, abs];
+  }
+  if (!best) return false;
+  if (best[1] !== c.dir && turnDelay) { doTurn(c, best[1]); return true; }
+  doMove(c, best[1]); return true;
+}
+
+/* dashed route for Show Path To Target (desktop _planned_route) */
+function plannedRoute(c) {
+  const z = ZONES[c.id];
+  const inA = k => {
+    const x = k % SIZE, y = Math.floor(k / SIZE);
+    return x >= z[0] && x <= z[1] && y >= z[2] && y <= z[3];
+  };
+  const wmap = mode === "shortest" ? quadrantWallMatrix(c.id) : c.known;
+  const goal = GOALS_CAR[c.id], goalK = goal[1]*SIZE + goal[0];
+  if (c.y*SIZE + c.x === goalK) return [];
+  // BFS to the goal over edges the car has actually sensed open
+  const knownD = new Int16Array(SIZE*SIZE).fill(-1);
+  knownD[goalK] = 0;
+  const q = [goalK];
+  for (let h = 0; h < q.length; h++) {
+    const k = q[h], x = k % SIZE, y = Math.floor(k / SIZE);
+    for (let d = 0; d < 4; d++) {
+      const nx = x + DX[d], ny = y + DY[d], nk = ny*SIZE + nx;
+      if (!inb(nx, ny) || !inA(nk) || knownD[nk] >= 0) continue;
+      if (wmap[y][x][d]) continue;
+      if (!c.visited.has(k) && !c.visited.has(nk)) continue;
+      knownD[nk] = knownD[k] + 1;
+      q.push(nk);
+    }
+  }
+  let dist = knownD, here = dist[c.y*SIZE + c.x];
+  if (here < 0) { dist = floodDist(wmap, [goal]); here = dist[c.y*SIZE + c.x]; }
+  if (here < 0) return [];
+  const route = [[c.x, c.y]];
+  let cur = c.y*SIZE + c.x;
+  for (let n = 0; n < SIZE*SIZE; n++) {
+    if (cur === goalK) return route;
+    const h2 = dist[cur];
+    if (h2 < 0) break;
+    let best = null;
+    for (let d = 0; d < 4; d++) {
+      if (wmap[Math.floor(cur / SIZE)][cur % SIZE][d]) continue;
+      const nx = (cur % SIZE) + DX[d], ny = Math.floor(cur / SIZE) + DY[d], nk = ny*SIZE + nx;
+      if (!inb(nx, ny) || !inA(nk)) continue;
+      const v = dist[nk];
+      if (v >= 0 && v < h2 && (best === null || v < best[0])) best = [v, nk];
+    }
+    if (!best) break;
+    cur = best[1];
+    route.push([cur % SIZE, Math.floor(cur / SIZE)]);
+  }
+  const last = route[route.length - 1];
+  return (last[1]*SIZE + last[0]) === goalK ? route : [];
 }
 
 /* ============================ adapter (car code) ============================ */
@@ -584,28 +748,26 @@ function adapterDecide(c) {
   };
   let action;
   try { action = callController(c.id, state).trim().toLowerCase(); }
-  catch (e) { telemetry.textContent = `Car ${c.id + 1} code error: ${e.message}`; return; }
+  catch (e) { telemetry.textContent = `Car ${c.id + 1} code error: ${e.message}`; return false; }
   if (action === "left" || action === "right" || action === "back") {
     const turn = { left: 3, right: 1, back: 2 }[action];
     c.pang = ANGLES[c.dir]; c.dir = (c.dir + turn) % 4; c.ang = ANGLES[c.dir];
     c.turns += 1; c.turned = true;
     c.plan = [];
-    return;
+    return true;
   }
-  if (action === "stop") {
-    c.stopped = true; c.finished = true; c.finishStep = totalSteps;
-    return;
-  }
+  if (action === "stop") return false;
   if (action === "forward") {
     const nx = c.x + DX[c.dir], ny = c.y + DY[c.dir];
-    if (outside(nx, ny)) { telemetry.textContent = `Car ${c.id + 1} held at its quadrant boundary`; return; }
-    if (walls[c.y][c.x][c.dir]) { telemetry.textContent = `Car ${c.id + 1} code tried to drive into a wall`; return; }
+    if (outside(nx, ny)) { telemetry.textContent = `Car ${c.id + 1} held at its quadrant boundary`; return true; }
+    if (walls[c.y][c.x][c.dir]) { telemetry.textContent = `Car ${c.id + 1} code tried to drive into a wall`; return true; }
     c.plan = [[nx, ny]];
     c.px = c.x; c.py = c.y; c.x = nx; c.y = ny; c.moves++; c.turned = false;
     c.visited.add(ny*SIZE + nx);
-    return;
+    return true;
   }
   telemetry.textContent = `Car ${c.id + 1} code returned unknown action ${JSON.stringify(action)}`;
+  return false;
 }
 function quadrantWallMatrix(i) {
   const z = ZONES[i];
@@ -639,8 +801,16 @@ function step() {
       c.finished = true; c.finishStep = totalSteps; continue;
     }
     sense(c);
-    if (adapterState.type !== "builtin" && (adapterState.source || jsStub)) adapterDecide(c);
-    else builtinDecide(c);
+    let acted;
+    if (adapterState.type !== "builtin" && (adapterState.source || jsStub)) acted = adapterDecide(c);
+    else acted = desktopMove(c);
+    if (!acted) {
+      c.finished = true; c.finishStep = totalSteps;
+      // come to a complete rest on the goal, like the desktop car
+      c.px = c.x; c.py = c.y; c.pang = ANGLES[c.dir]; c.ang = ANGLES[c.dir];
+      c.plan = [];
+      continue;
+    }
   }
   currentStepDur = Math.max(50, stepMs);
   animT = 0;
@@ -847,18 +1017,20 @@ function draw() {
   }
 
   if (showPath) {
-    ctx.setLineDash([6, 5]);
+    // desktop Show Path To Target: the car's current best route to its
+    // centre goal, dashed in its colour, drawn once it has started moving
     for (const c of cars) {
-      if (c.finished || !c.plan.length) continue;
-      ctx.strokeStyle = CAR_COLORS[c.id]; ctx.globalAlpha = .85; ctx.lineWidth = 1.5;
-      const t = ease(animT);
-      const cx = PAD + (c.px + (c.x - c.px)*t)*CELL + CELL/2;
-      const cy = PAD + (c.py + (c.y - c.py)*t)*CELL + CELL/2;
-      ctx.beginPath(); ctx.moveTo(cx, cy);
-      for (const [x, y] of c.plan) ctx.lineTo(PAD + x*CELL + CELL/2, PAD + y*CELL + CELL/2);
-      ctx.stroke(); ctx.globalAlpha = 1;
+      if (c.visited.size <= 1 || c.finished) continue;
+      const route = plannedRoute(c);
+      if (route.length < 2) continue;
+      ctx.strokeStyle = CAR_COLORS[c.id]; ctx.lineWidth = 2; ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      route.forEach(([x, y], i) => {
+        const X = PAD + (x + 0.5)*CELL, Y = PAD + (y + 0.5)*CELL;
+        if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y);
+      });
+      ctx.stroke(); ctx.setLineDash([]);
     }
-    ctx.setLineDash([]);
   }
 
   // sensed-wall ticks (green), like the desktop sensor indicators
@@ -997,26 +1169,59 @@ document.getElementById("btnClear").onclick = () => {
   reset(); telemetry.textContent = "Interior walls cleared";
 };
 document.getElementById("btnGen").onclick = () => {
-  const m = Array.from({length: SIZE}, () => Array.from({length: SIZE}, () => [false,false,false,false]));
-  const visited = Array.from({length: SIZE}, () => new Array(SIZE).fill(false));
-  const stack = [[0, 0]]; visited[0][0] = true;
-  while (stack.length) {
-    const [x, y] = stack[stack.length - 1];
-    const opts = [];
-    for (let d = 0; d < 4; d++) {
-      const nx = x + DX[d], ny = y + DY[d];
-      if (inb(nx, ny) && !visited[ny][nx]) opts.push([d, nx, ny]);
+  // Desktop Maze.randomize(): open grid with boundaries only, sprinkle
+  // random interior walls (22%), then relax walls until every quadrant is
+  // connected within itself so each car can reach every cell it owns.
+  const m = Array.from({length: SIZE}, (_, y) =>
+    Array.from({length: SIZE}, (_, x) => [y === 0, x === SIZE-1, y === SIZE-1, x === 0]));
+  const candidates = [];
+  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE-1; x++) candidates.push([x, y, 1]);
+  for (let y = 0; y < SIZE-1; y++) for (let x = 0; x < SIZE; x++) candidates.push([x, y, 2]);
+  for (let i = candidates.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+  }
+  for (const [x, y, d] of candidates) {
+    if (Math.random() >= 0.22) continue;
+    m[y][x][d] = true;
+    m[y + DY[d]][x + DX[d]][OPP[d]] = true;
+  }
+  for (let i = 0; i < 4; i++) {
+    const [zx0, zx1, zy0, zy1] = ZONES[i];
+    const zone = (x, y) => x >= zx0 && x <= zx1 && y >= zy0 && y <= zy1;
+    for (;;) {
+      const comp = new Map(); let n = 0;
+      for (let y = zy0; y <= zy1; y++) for (let x = zx0; x <= zx1; x++) {
+        if (comp.has(y*SIZE + x)) continue;
+        n++;
+        const stack = [[x, y]]; comp.set(y*SIZE + x, n);
+        while (stack.length) {
+          const [cx, cy] = stack.pop();
+          for (let d = 0; d < 4; d++) {
+            if (m[cy][cx][d]) continue;
+            const nx = cx + DX[d], ny = cy + DY[d];
+            if (!zone(nx, ny) || comp.has(ny*SIZE + nx)) continue;
+            comp.set(ny*SIZE + nx, n); stack.push([nx, ny]);
+          }
+        }
+      }
+      if (n <= 1) break;
+      let merged = false;
+      outer:
+      for (let y = zy0; y <= zy1; y++) for (let x = zx0; x <= zx1; x++) {
+        for (let d = 0; d < 4; d++) {
+          const nx = x + DX[d], ny = y + DY[d];
+          if (!zone(nx, ny) || !m[y][x][d]) continue;
+          if (comp.get(y*SIZE + x) !== comp.get(ny*SIZE + nx)) {
+            m[y][x][d] = false; m[ny][nx][OPP[d]] = false;
+            merged = true; break outer;
+          }
+        }
+      }
+      if (!merged) break;
     }
-    if (!opts.length) { stack.pop(); continue; }
-    const [d, nx, ny] = opts[Math.floor(Math.random() * opts.length)];
-    m[y][x][d] = false; m[ny][nx][OPP[d]] = false;
-    visited[ny][nx] = true; stack.push([nx, ny]);
   }
-  for (let i = 0; i < SIZE; i++) {
-    m[0][i][0] = true; m[SIZE-1][i][2] = true;
-    m[i][0][3] = true; m[i][SIZE-1][1] = true;
-  }
-  walls = m; mazeOrigin = "custom"; mazeName = "Generated maze";
+  walls = m; mazeOrigin = "generated"; mazeName = "Generated maze";
   reset(); telemetry.textContent = "Random maze generated";
 };
 document.getElementById("btnSave").onclick = () => {
@@ -1041,8 +1246,52 @@ function renderRecent() {
     d.textContent = entry.name;
     d.onclick = () => { walls = cloneMaze(entry.walls); mazeOrigin = "custom"; mazeName = entry.name; reset();
                         telemetry.textContent = `Loaded ${entry.name}`; };
+    d.ondblclick = e => showSaveMenu(i, entry, e);
     el.appendChild(d);
   });
+}
+/* desktop: double-click a saved maze offers Rename or Delete */
+function showSaveMenu(i, entry, ev) {
+  closeSaveMenu();
+  const menu = document.createElement("div");
+  menu.id = "saveMenu";
+  menu.style.cssText = "position:fixed;z-index:50;background:#1d2d46;border:1px solid rgba(45,212,191,.3);" +
+    "border-radius:6px;box-shadow:0 8px 20px rgba(0,0,0,.5);min-width:130px;overflow:hidden";
+  const item = (label, fn) => {
+    const it = document.createElement("div");
+    it.textContent = label;
+    it.style.cssText = "padding:7px 14px;cursor:pointer;color:#e6f4f1;font-size:13px";
+    it.onmouseenter = () => it.style.background = "#162238";
+    it.onmouseleave = () => it.style.background = "";
+    it.onclick = () => { closeSaveMenu(); fn(); };
+    menu.appendChild(it);
+  };
+  item("Rename", () => {
+    const name = prompt("Rename maze", entry.name);
+    if (!name) return;
+    const list = JSON.parse(localStorage.getItem("mouse_saves") || "[]");
+    if (!list[i]) return;
+    list[i].name = name.trim() || entry.name;
+    localStorage.setItem("mouse_saves", JSON.stringify(list));
+    renderRecent();
+    telemetry.textContent = `Maze renamed to '${list[i].name}'`;
+  });
+  item("Delete", () => {
+    if (!confirm(`Delete the saved maze '${entry.name}'?`)) return;
+    const list = JSON.parse(localStorage.getItem("mouse_saves") || "[]");
+    list.splice(i, 1);
+    localStorage.setItem("mouse_saves", JSON.stringify(list));
+    renderRecent();
+    telemetry.textContent = `Maze '${entry.name}' deleted`;
+  });
+  document.body.appendChild(menu);
+  menu.style.left = Math.min(ev.clientX, window.innerWidth - 150) + "px";
+  menu.style.top = Math.min(ev.clientY, window.innerHeight - 100) + "px";
+  setTimeout(() => document.addEventListener("click", closeSaveMenu, { once: true }), 0);
+}
+function closeSaveMenu() {
+  const m = document.getElementById("saveMenu");
+  if (m) m.remove();
 }
 
 /* ---- Maze Tools tab: Save / Load / Export / Import ---- */
