@@ -86,6 +86,16 @@
     .mid { width:100%; max-width:560px; }
     .right { max-width:none; }
   }
+  /* phones / tablets held upright: the 'Micromouse Car Simulator' block
+     scrolls inside a fixed-height box, so the maze above and the tab panel
+     below never get pushed around; its width is slightly narrowed, and the
+     tab strip scrolls sideways instead of clipping the last tab */
+  @media (max-width: 1020px) and (orientation: portrait) {
+    .mid { max-width:520px; max-height:56vh; overflow:auto; overscroll-behavior:contain; }
+    .right { margin-inline:2px; }
+    .tabs { overflow-x:auto; overscroll-behavior:contain; }
+    .tabs button { flex:0 0 auto; padding:9px 12px; }
+  }
   /* phone held sideways (the view the rotate hint leads to): one row -
      the maze sized to the screen height, controls and the panel beside it,
      nothing pushed below the fold */
