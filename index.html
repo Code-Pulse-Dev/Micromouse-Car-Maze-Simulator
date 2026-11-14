@@ -83,7 +83,7 @@
   <div><canvas id="cv" width="544" height="544"></canvas></div>
 
   <div class="mid">
-    <h2>Micromouse Car Simulator <span id="buildTag" style="font-size:10px;color:#5a718f;font-weight:normal"></span></h2>
+    <h2>Micromouse Car Simulator <span id="buildTag" style="display:block;font-size:10px;color:#5a718f;font-weight:normal;white-space:nowrap"></span></h2>
     <button id="btnReal">Use Real Maze</button>
     <button id="btnGen">Generate Maze</button>
     <button id="btnClear">Clear Interior Walls</button>
@@ -161,7 +161,7 @@
         <div class="modelRow"><label>Name:</label>
           <input type="text" id="nameA" value="ESP32-S3 Micromouse" readonly>
           <button id="upA" class="mini">Upload Code Folder…</button></div>
-        <div class="ready" id="readyA">Ready: ESP32-S3 Micromouse simulation adapter</div>
+        <div class="ready" id="readyA">Ready: (no adapter connected — select the model, then upload or load the adapter)</div>
       </div>
       <div class="modelBlock">
         <label class="card"><input type="radio" name="cartype" value="carB">
@@ -169,7 +169,7 @@
         <div class="modelRow"><label>Name:</label>
           <input type="text" id="nameB" value="TQD Micromouse JS2" readonly>
           <button id="upB" class="mini">Upload Code Folder…</button></div>
-        <div class="ready" id="readyB">Ready: TQD Micromouse JS2 simulation adapter</div>
+        <div class="ready" id="readyB">Ready: (no adapter connected — select the model, then upload or load the adapter)</div>
       </div>
       <div class="modelBlock">
         <label class="card"><input type="radio" name="cartype" value="mycar">
@@ -177,7 +177,7 @@
         <div class="modelRow"><label>Name:</label>
           <input type="text" id="nameC" value="My car">
           <button id="upC" class="mini">Upload Code Folder…</button></div>
-        <div class="ready" id="readyC">Ready: (Upload Code File)</div>
+        <div class="ready" id="readyC">Ready: (no adapter connected — click Upload Code Folder…)</div>
       </div>
       <input type="file" id="fileCode" webkitdirectory directory multiple hidden>
       <div class="hint"><b>How it works:</b>
@@ -987,9 +987,10 @@ function draw() {
       ctx.fillText(String(v), PAD + x*CELL + CELL/2, PAD + y*CELL + CELL/2 + 3);
     }
   }
-  // one "GOAL" across the centre block - shown until the first car gets
-  // there, exactly like the desktop app
-  if (cars.length && cars.every(c => c.goalTime === null)) {
+  // one "GOAL" across the centre block - it disappears as soon as the
+  // cars start to move, so the sprites stay readable
+  if (cars.length && cars.every(c => c.goalTime === null) &&
+      !cars.some(c => c.moves > 0 || c.turns > 0)) {
     const centre = PAD + 8*CELL;
     ctx.font = "bold 13px 'Segoe UI', sans-serif"; ctx.textAlign = "center";
     ctx.fillStyle = "#7c5c12"; ctx.fillText("GOAL", centre + 1, centre + 5);
@@ -1171,7 +1172,7 @@ document.getElementById("btnClear").onclick = () => {
   mazeOrigin = "custom"; mazeName = "Cleared maze";
   reset(); telemetry.textContent = "Interior walls cleared";
 };
-document.getElementById("btnGen").onclick = () => {
+function generateRandomMaze() {
   // Desktop Maze.randomize(): open grid with boundaries only, sprinkle
   // random interior walls (22%), then relax walls until every quadrant is
   // connected within itself so each car can reach every cell it owns.
@@ -1226,7 +1227,38 @@ document.getElementById("btnGen").onclick = () => {
   }
   walls = m; mazeOrigin = "generated"; mazeName = "Generated maze";
   reset(); telemetry.textContent = "Random maze generated";
-};
+}
+function createScratchMaze() {
+  // "Create from scratch": open grid with the boundary walls only
+  walls = walls.map((row, y) => row.map((cell, x) => [
+    y === 0 ? true : false, x === SIZE-1 ? true : false,
+    y === SIZE-1 ? true : false, x === 0 ? true : false,
+  ]));
+  mazeOrigin = "cleared"; mazeName = "Scratch maze";
+  reset(); telemetry.textContent = "New maze created from scratch";
+}
+/* desktop-style ask: generate randomly or create from scratch */
+document.getElementById("btnGen").onclick = () => showGenDialog();
+const genModal = document.createElement("div");
+genModal.style.cssText = "display:none;position:fixed;inset:0;background:rgba(4,10,20,.6);" +
+  "z-index:60;align-items:center;justify-content:center";
+genModal.innerHTML =
+  '<div style="background:#16233b;border:1px solid rgba(45,212,191,.35);border-radius:10px;' +
+  'padding:18px 22px;min-width:340px;box-shadow:0 18px 50px rgba(0,0,0,.6)">' +
+  '<div style="font:600 15px \'Segoe UI\',sans-serif;color:#7fe7d4;margin-bottom:8px">Generate maze</div>' +
+  '<div style="font:13px \'Segoe UI\',sans-serif;color:#dbe4f3;margin-bottom:14px">' +
+  'How do you want to create the maze?</div>' +
+  '<div style="display:flex;gap:10px;justify-content:flex-end">' +
+  '<button id="genScratch" style="background:#1d2d46;color:#dbe4f3;border:1px solid #2a3c58;' +
+  'border-radius:6px;padding:7px 14px;font:600 13px \'Segoe UI\',sans-serif;cursor:pointer">Create From Scratch</button>' +
+  '<button id="genRandom" style="background:#2dd4bf;color:#06201c;border:0;border-radius:6px;' +
+  'padding:7px 14px;font:600 13px \'Segoe UI\',sans-serif;cursor:pointer">Generate Randomly</button>' +
+  '</div></div>';
+document.body.appendChild(genModal);
+function showGenDialog() { genModal.style.display = "flex"; }
+document.getElementById("genRandom").onclick = () => { genModal.style.display = "none"; generateRandomMaze(); };
+document.getElementById("genScratch").onclick = () => { genModal.style.display = "none"; createScratchMaze(); };
+genModal.addEventListener("click", e => { if (e.target === genModal) genModal.style.display = "none"; });
 document.getElementById("btnSave").onclick = () => {
   const name = `Maze ${new Date().toLocaleString([], {day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit"})}`;
   const blob = new Blob([JSON.stringify({ name, saved_at: new Date().toISOString(), walls }, null, 0)],
@@ -1475,9 +1507,8 @@ async function selectCarModel(key) {
     }
   }
   if (!src) {
-    readyEl(key).textContent = "Ready: (Upload Code File)";
-    uploadTarget = key;
-    document.getElementById("fileCode").click();
+    readyEl(key).textContent =
+      "Ready: (no adapter connected — click Upload Code Folder…)";
     return;
   }
   const name = key === "mycar"
@@ -1488,12 +1519,69 @@ async function selectCarModel(key) {
   readyEl(key).textContent = "Ready: " + name + " — adapter loaded";
 }
 
+/* ---------- guided upload flow (desktop-style) ----------
+   1. the user must select the car model first,
+   2. then is directed to the GitHub adapters page to pick the adapter,
+   3. only after uploading does the Ready line name the connected adapter. */
+const GITHUB_ADAPTERS_URL =
+  "https://github.com/Code-Pulse-Dev/Micromouse-Car-Maze-Simulator/tree/main/car_codes";
+const uploadModal = document.createElement("div");
+uploadModal.style.cssText = "display:none;position:fixed;inset:0;background:rgba(4,10,20,.6);" +
+  "z-index:60;align-items:center;justify-content:center";
+document.body.appendChild(uploadModal);
+const uploadBtnStyle = s => "border-radius:6px;padding:7px 14px;font:600 13px 'Segoe UI',sans-serif;cursor:pointer;" + s;
+
 [["carA", "upA"], ["carB", "upB"], ["mycar", "upC"]].forEach(([key, btn]) => {
-  document.getElementById(btn).onclick = () => {
-    uploadTarget = key;
+  document.getElementById(btn).onclick = () => showUploadDialog(key);
+});
+
+function showUploadDialog(key) {
+  uploadTarget = key;
+  const chosen = document.querySelector('input[name=cartype]:checked');
+  const model = chosen ? chosen.value : null;
+  const gitBtn = '<button id="upOpenGit" style="' + uploadBtnStyle(
+    "background:#1d2d46;color:#7fe7d4;border:1px solid #2a3c58") + '">Open GitHub Adapters</button>';
+  const closeBtn = '<button id="upClose" style="' + uploadBtnStyle(
+    "background:transparent;color:#9db4c5;border:1px solid #2a3c58") + '">Cancel</button>';
+  const shell = (title, body, buttons) =>
+    '<div style="background:#16233b;border:1px solid rgba(45,212,191,.35);border-radius:10px;' +
+    'padding:18px 22px;min-width:360px;max-width:520px;box-shadow:0 18px 50px rgba(0,0,0,.6)">' +
+    '<div style="font:600 15px \'Segoe UI\',sans-serif;color:#7fe7d4;margin-bottom:8px">' + title + '</div>' +
+    '<div style="font:13px \'Segoe UI\',sans-serif;color:#dbe4f3;white-space:pre-wrap;margin-bottom:14px">' + body + '</div>' +
+    '<div style="display:flex;gap:10px;justify-content:flex-end">' + buttons + '</div></div>';
+  if (!model || model === "builtin") {
+    uploadModal.innerHTML = shell(
+      "Car code upload — first select the car model",
+      "Please first select the car model above\n" +
+      "(ESP32-S3 Micromouse, TQD Micromouse JS2 or My car).\n\n" +
+      "Then choose the matching adapter on the GitHub adapters page and\n" +
+      "upload its folder here. The Ready line only names the adapter once\n" +
+      "it is actually connected.",
+      gitBtn + closeBtn);
+  } else {
+    const modelName = key === "mycar" ? "My car"
+      : key === "carA" ? "ESP32-S3 Micromouse" : "TQD Micromouse JS2";
+    uploadModal.innerHTML = shell(
+      "Car code upload — choose the adapter on GitHub",
+      "1. Open the GitHub adapters page and open the matching\n" +
+      `   adapter folder for ${modelName}.\n` +
+      "2. Click Upload Adapter Folder here and select that folder\n" +
+      "   (it must contain CarController.py).\n" +
+      "3. The Ready line then shows which adapter is connected.",
+      gitBtn +
+      '<button id="upProceed" style="' + uploadBtnStyle(
+        "background:#2dd4bf;color:#06201c;border:0") + '">Upload Adapter Folder</button>' +
+      closeBtn);
+  }
+  uploadModal.style.display = "flex";
+  document.getElementById("upOpenGit").onclick = () => window.open(GITHUB_ADAPTERS_URL, "_blank");
+  const proceed = document.getElementById("upProceed");
+  if (proceed) proceed.onclick = () => {
+    uploadModal.style.display = "none";
     document.getElementById("fileCode").click();
   };
-});
+  document.getElementById("upClose").onclick = () => uploadModal.style.display = "none";
+}
 
 document.getElementById("fileCode").onchange = async e => {
   const files = [...e.target.files];
@@ -1715,7 +1803,7 @@ function showFinishedModal() {
       `Distance ${c.moves} cells; Turns ${c.turns}`).join("\n");
   finishModal.style.display = "flex";
 }
-document.getElementById("buildTag").textContent = "build 2026-11-15.1";
+document.getElementById("buildTag").textContent = "build 2026-11-15.2";
 </script>
 </body>
 </html>
