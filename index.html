@@ -101,7 +101,7 @@
   <div class="canvasWrap"><canvas id="cv" width="544" height="544"></canvas></div>
 
   <div class="mid">
-    <h2>Micromouse Car Simulator <span id="buildTag" style="display:block;font-size:10px;color:#5a718f;font-weight:normal;white-space:nowrap"></span></h2>
+    <h2>Micromouse Car Simulator</h2>
     <button id="btnReal">Use Real Maze</button>
     <button id="btnGen">Generate Maze</button>
     <button id="btnClear">Clear Interior Walls</button>
@@ -198,6 +198,7 @@
         <div class="ready" id="readyC">Ready: (no adapter connected — click Upload Code Folder…)</div>
       </div>
       <input type="file" id="fileCode" webkitdirectory directory multiple hidden>
+      <input type="file" id="fileCodeFile" accept=".py" multiple hidden>
       <div class="hint"><b>How it works:</b>
         <ul>
           <li>Tick/Select the first car model (Built-in Scenarios), then Run under different
@@ -1605,8 +1606,13 @@ function showUploadDialog(key) {
       "2. Double-click CarController.py — a confirmation pops up; after\n" +
       "   you confirm, the upload is successful. Single-clicking it will\n" +
       "   only show the code.\n" +
-      "3. The Ready line then shows which adapter is connected.",
+      "3. The Ready line then shows which adapter is connected.\n\n" +
+      "Prefer picking the code directly? Use Upload Adapter Folder on a\n" +
+      "computer, or Choose CarController.py File on a phone or tablet\n" +
+      "(folder pickers do not work on most mobile devices).",
       gitBtn +
+      '<button id="upFileBtn" style="' + uploadBtnStyle(
+        "background:#1d2d46;color:#7fe7d4;border:1px solid #2a3c58") + '">Choose CarController.py File</button>' +
       '<button id="upProceed" style="' + uploadBtnStyle(
         "background:#2dd4bf;color:#06201c;border:0") + '">Upload Adapter Folder</button>' +
       closeBtn);
@@ -1617,6 +1623,11 @@ function showUploadDialog(key) {
   if (proceed) proceed.onclick = () => {
     uploadModal.style.display = "none";
     document.getElementById("fileCode").click();
+  };
+  const fileBtn = document.getElementById("upFileBtn");
+  if (fileBtn) fileBtn.onclick = () => {
+    uploadModal.style.display = "none";
+    document.getElementById("fileCodeFile").click();
   };
   document.getElementById("upClose").onclick = () => uploadModal.style.display = "none";
 }
@@ -1835,17 +1846,50 @@ function targetLabel(key) {
   return key === "carA" ? "ESP32-S3 Micromouse" : key === "carB" ? "TQD Micromouse JS2" : "My car";
 }
 
-document.getElementById("fileCode").onchange = async e => {
-  const files = [...e.target.files];
-  const ctrl = files.find(f => f.name.toLowerCase() === "carcontroller.py");
+/* Shared upload handler: works for a picked folder (desktop) and for
+   directly picked CarController.py files (phones - folder pickers do not
+   work on most mobile devices). */
+async function applyUploadFiles(fileList, source) {
+  const files = [...fileList];
+  if (!files.length) return;
   const key = uploadTarget || "mycar";
-  if (!ctrl) { readyEl(key).textContent = "No CarController.py found in that folder"; return; }
-  const folder = (ctrl.webkitRelativePath || "").split("/")[0] || "Uploaded car";
-  MODEL_SOURCES[key] = await ctrl.text();
-  if (key === "mycar") document.getElementById("nameC").value = folder;
-  setCarTypeRadio(key);
-  await selectCarModel(key);
-  readyEl(key).textContent = "Ready: " + folder + " — adapter uploaded";
+  const modelName = targetLabel(key);
+  let ctrl = files.find(f => f.name.toLowerCase() === "carcontroller.py");
+  if (!ctrl) ctrl = files.find(f => f.name.toLowerCase().endsWith(".py"));
+  if (!ctrl) {
+    readyEl(key).textContent =
+      "No CarController.py found in that " + (source === "folder" ? "folder" : "selection");
+    return;
+  }
+  readyEl(key).textContent = "Uploading adapter code for " + modelName + "…";
+  codeStatus.textContent = "Uploading adapter code…";
+  const where = (ctrl.webkitRelativePath || ctrl.name);
+  try {
+    const srcText = await ctrl.text();
+    MODEL_SOURCES[key] = srcText;
+    const folder = where.includes("/") ? where.split("/")[0]
+      : ctrl.name.replace(/\.py$/i, "") || "Uploaded car";
+    if (key === "mycar") document.getElementById("nameC").value = folder;
+    setCarTypeRadio(key);
+    await selectCarModel(key);
+    readyEl(key).textContent = "Ready: " + modelName +
+      " — adapter uploaded (" + (source === "folder" ? "folder " + folder : "file " + ctrl.name) + ")";
+    codeStatus.textContent = "Car code upload successful: " + where;
+    telemetry.textContent = "Car code upload successful: " + where;
+  } catch (e) {
+    readyEl(key).textContent = "Upload failed: " + (e && e.message || e);
+    codeStatus.textContent = "Adapter error: " + (e && e.message || e);
+  }
+}
+document.getElementById("fileCode").onchange = e => {
+  const files = [...e.target.files];
+  e.target.value = "";
+  applyUploadFiles(files, "folder");
+};
+document.getElementById("fileCodeFile").onchange = e => {
+  const files = [...e.target.files];
+  e.target.value = "";
+  applyUploadFiles(files, "file");
 };
 
 /* ---------- hardware (Web Serial) ---------- */
@@ -2090,8 +2134,7 @@ let rotateDismissed = false;
 document.getElementById("rotSkip").onclick = () => {
   rotateDismissed = true;
   rotateOverlay.style.display = "none";
-};
-function updateRotateHint() {
+};function updateRotateHint() {
   const touch = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) ||
     "ontouchstart" in window;
   const landscape = window.innerWidth > window.innerHeight;
@@ -2103,8 +2146,6 @@ function updateRotateHint() {
 window.addEventListener("resize", updateRotateHint);
 window.addEventListener("orientationchange", () => setTimeout(updateRotateHint, 120));
 updateRotateHint();
-
-document.getElementById("buildTag").textContent = "build 2026-11-15.6";
 </script>
 </body>
 </html>
