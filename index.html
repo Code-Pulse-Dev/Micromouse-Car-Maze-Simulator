@@ -842,12 +842,9 @@ function adapterDecide(c) {
   if (action === "left" || action === "right" || action === "back") {
     const turn = { left: 3, right: 1, back: 2 }[action];
     const newDir = (c.dir + turn) % 4;
-    if (!turnDelay) {
-      // identical pacing to the built-in scenario: with Turn Delay off,
-      // a turn and the following move happen in the same tick
-      const nx = c.x + DX[newDir], ny = c.y + DY[newDir];
-      if (!outside(nx, ny) && !walls[c.y][c.x][newDir]) { doMove(c, newDir); return true; }
-    }
+    // like the desktop app: an uploaded-code car ALWAYS stops and rotates
+    // on the spot when turning - it never weaves around the corner, no
+    // matter what the Turn Delay checkbox is set to
     doTurn(c, newDir);
     c.plan = [];
     return true;
