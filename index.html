@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Micromouse Car Maze Simulator</title>
+<style>
+  :root { --bg:#0f172a; --panel:#162238; --panel2:#1d2d46; --line:#2a3b57; --text:#e6edf7; --dim:#9fb1cc; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font-family:"Segoe UI", system-ui, Arial, sans-serif; }
+  header { padding:14px 22px 6px; }
+  header h1 { margin:0; font-size:20px; font-weight:600; }
+  header p  { margin:4px 0 0; color:var(--dim); font-size:13px; }
+  .bar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:10px 22px; }
+  button, select { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+         border-radius:8px; padding:7px 14px; font-size:13px; cursor:pointer; }
+  button:hover { background:#25395a; }
+  button:disabled { opacity:.45; cursor:default; }
+  label { font-size:13px; color:var(--dim); }
+  input[type=range] { accent-color:#4dabf7; }
+  .layout { display:flex; flex-wrap:wrap; gap:18px; padding:6px 22px 24px; align-items:flex-start; }
+  #cv { background:#0b1324; border:1px solid var(--line); border-radius:10px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+           padding:12px 14px; min-width:300px; flex:1; max-width:430px; }
+  .panel h2 { margin:0 0 8px; font-size:14px; font-weight:600; color:var(--dim);
+              text-transform:uppercase; letter-spacing:.06em; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th { text-align:left; color:var(--dim); font-weight:600; padding:4px 6px;
+       border-bottom:1px solid var(--line); }
+  td { padding:5px 6px; border-bottom:1px solid #1f2d45; }
+  td b { font-weight:600; }
+  .legend { margin-top:12px; font-size:12.5px; line-height:1.7; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:6px; }
+  #banner { padding:8px 22px; font-size:14px; min-height:20px; color:#ffd43b; }
+  .err { color:#ff8787; padding:12px 22px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Micromouse Car Maze Simulator</h1>
+  <p>Four cars, one 16x16 maze. Each car sweeps its own quadrant with flood-fill navigation,
+     then walks its reserved corridor into the centre goal.</p>
+</header>
+
+<div class="bar">
+  <button id="runBtn">Run</button>
+  <button id="stepBtn">Step</button>
+  <button id="resetBtn">Reset</button>
+  <select id="modeSel">
+    <option value="explore" selected>Explore mode</option>
+    <option value="shortest">Shortest Path mode</option>
+  </select>
+  <label>Step time <input id="speed" type="range" min="100" max="400" step="10" value="220"> <span id="spdLbl">220 ms</span></label>
+  <label><input id="trails" type="checkbox"> Trails</label>
+</div>
+<div id="banner"></div>
+
+<div class="layout">
+  <canvas id="cv" width="640" height="640"></canvas>
+  <div class="panel">
+    <h2>Car Statistics</h2>
+    <table id="stats">
+      <tr><th>Car</th><th>Explored</th><th>Distance</th><th>Turns</th><th>Status</th></tr>
+    </table>
+    <div class="legend">
+      <div><span class="dot" style="background:#ff922b"></span>Orange Color: Flood Value (car 1's map)</div>
+      <div><span class="dot" style="background:#ffd43b"></span>Gold Color: Goal</div>
+      <div style="margin-top:6px;color:var(--dim)">
+        Explored = unique cells visited in the car's quadrant. Distance counts every forward move,
+        revisits included. Time = steps x step time.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ---------------- maze data (real maze, saved 2026-11-14) ---------------- */
+const MAZE_W = [[[true,false,true,true],[true,false,true,false],[true,false,false,false],[true,false,true,false],[true,false,false,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,false,false],[true,false,false,false],[true,false,true,false],[true,false,true,false],[true,false,false,false],[true,false,false,false],[true,true,false,false],[true,true,false,true]],[[true,true,false,true],[true,true,false,true],[false,false,true,true],[true,true,false,false],[false,true,false,true],[true,true,false,true],[true,true,false,true],[true,false,false,true],[false,true,false,false],[false,true,false,true],[true,false,true,true],[true,true,false,false],[false,true,false,true],[false,true,true,true],[false,true,false,true],[false,true,false,true]],[[false,true,false,true],[false,true,false,true],[true,false,false,true],[false,true,true,false],[false,true,false,true],[false,true,false,true],[false,false,false,true],[false,true,true,false],[false,true,true,true],[false,false,true,true],[true,false,true,false],[false,true,true,false],[false,false,true,true],[true,true,false,false],[false,false,true,true],[false,true,false,false]],[[false,true,false,true],[false,false,true,true],[false,true,false,false],[true,false,true,true],[false,true,false,false],[false,false,false,true],[false,true,true,false],[true,true,false,true],[true,false,false,true],[true,false,true,false],[true,false,true,false],[true,false,false,false],[true,true,true,false],[false,true,false,true],[true,true,false,true],[false,true,false,true]],[[false,true,false,true],[true,false,true,true],[false,false,true,false],[true,false,true,false],[false,true,false,false],[false,true,false,true],[true,false,false,true],[false,true,false,false],[false,false,false,true],[true,true,true,false],[true,false,false,true],[false,true,true,false],[true,false,false,true],[false,true,false,false],[false,true,false,true],[false,true,true,true]],[[false,true,false,true],[true,false,false,true],[true,false,true,false],[true,false,true,false],[false,true,false,false],[false,true,false,true],[false,true,false,true],[false,true,false,true],[false,true,false,true],[true,false,false,true],[false,false,true,false],[true,false,false,false],[false,true,false,false],[false,true,true,true],[false,false,false,true],[true,true,false,false]],[[false,true,false,true],[false,true,false,true],[true,false,false,true],[true,false,true,false],[false,false,true,false],[false,true,true,false],[false,true,false,true],[false,false,false,true],[false,true,false,false],[false,false,true,true],[true,true,false,false],[false,true,true,true],[false,false,false,true],[true,false,true,false],[false,true,true,false],[false,true,false,true]],[[false,false,true,true],[false,false,true,false],[false,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[false,true,true,false],[false,true,true,true],[false,true,true,true],[true,false,true,true],[false,false,true,false],[true,false,false,false],[false,false,true,false],[true,false,true,false],[true,true,false,false],[false,true,false,true]],[[true,true,false,true],[true,false,true,true],[true,false,true,false],[true,false,true,false],[true,false,false,false],[true,false,true,false],[true,true,false,false],[true,true,false,true],[true,true,false,true],[true,false,false,true],[true,false,true,false],[false,false,true,false],[true,true,false,false],[true,false,false,true],[false,true,true,false],[false,true,false,true]],[[false,false,false,true],[true,false,true,false],[true,true,false,false],[true,true,false,true],[false,true,false,true],[true,true,false,true],[false,true,false,true],[false,false,false,true],[false,true,false,false],[false,false,false,true],[true,false,true,false],[true,true,false,false],[false,true,false,true],[false,true,false,true],[true,true,false,true],[false,true,false,true]],[[false,true,false,true],[true,false,true,true],[false,false,true,false],[false,true,false,false],[false,false,true,true],[false,true,false,false],[false,true,false,true],[false,true,false,true],[false,true,false,true],[false,true,false,true],[true,false,false,true],[false,true,true,false],[false,false,false,true],[false,false,false,false],[false,false,false,false],[false,true,true,false]],[[false,false,false,true],[true,false,true,false],[true,true,false,false],[false,true,true,true],[true,true,false,true],[false,true,false,true],[false,true,false,true],[false,true,false,true],[false,true,false,true],[false,true,false,true],[false,false,true,true],[true,true,true,false],[false,true,false,true],[false,true,false,true],[false,true,true,true],[true,true,false,true]],[[false,true,false,true],[true,false,true,true],[false,false,true,false],[true,false,false,false],[false,false,true,false],[false,true,true,false],[false,false,false,true],[false,true,true,false],[false,false,true,true],[false,true,true,false],[true,false,true,true],[true,false,false,false],[false,false,true,false],[false,false,true,false],[true,false,true,false],[false,true,false,false]],[[false,true,false,true],[true,false,true,true],[true,true,false,false],[false,false,false,true],[true,false,true,false],[true,false,true,false],[false,true,false,false],[true,false,false,true],[true,true,false,false],[true,false,false,true],[true,true,false,false],[false,true,false,true],[true,true,false,true],[true,true,false,true],[true,true,false,true],[false,true,false,true]],[[false,false,false,true],[true,false,true,false],[false,false,true,false],[false,false,true,false],[true,false,true,false],[true,false,false,false],[false,true,true,false],[false,true,false,true],[false,false,true,true],[false,true,true,false],[false,false,true,true],[false,false,true,false],[false,false,true,false],[false,false,true,false],[false,true,true,false],[false,true,false,true]],[[false,false,true,true],[true,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[false,false,true,false],[true,false,true,false],[false,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[false,true,true,false]]];
+const MAZE_EDITS = {"13,10,1": false, "13,11,2": false, "15,4,2": true};
+
+/* ---------------- constants (ported from maze_simulator.py) ---------------- */
+const N = 16;
+const DX = [0, 1, 0, -1], DY = [-1, 0, 1, 0], OPP = [2, 3, 0, 1];
+const GOAL_CELLS = [[7,7],[8,7],[7,8],[8,8]];
+const STARTS = [[0,0,1],[15,0,2],[0,15,3],[15,15,0]];          // x, y, dir (N,E,S,W)
+const CAR_COLORS = ["#ff6b6b","#4dabf7","#69db7c","#cc8bff"];
+const CAR_NAMES = ["Car 1","Car 2","Car 3","Car 4"];
+const ZONES = [[0,7,0,7],[8,15,0,7],[0,7,8,15],[8,15,8,15]];   // x0,x1,y0,y1
+const CAR_GOALS = [[7,7],[8,7],[7,8],[8,8]];
+const RESERVED = [
+  new Set(["7,3","7,4","7,5","7,6"]),
+  new Set(["8,3","8,4","8,5","8,6"]),
+  new Set(["7,9","7,10","7,11","7,12"]),
+  new Set(["8,9","8,10","8,11","8,12"]),
+];
+const ANGLES = [270, 0, 90, 180];                              // render angle per dir
+const TURN_COST = 0.55;
+
+/* apply the saved wall edits (mirrored like the desktop app) */
+for (const [k, v] of Object.entries(MAZE_EDITS)) {
+  const [x, y, d] = k.split(",").map(Number);
+  MAZE_W[y][x][d] = v;
+  const nx = x + DX[d], ny = y + DY[d];
+  if (nx >= 0 && nx < N && ny >= 0 && ny < N) MAZE_W[ny][nx][OPP[d]] = v;
+}
+
+/* ---------------- state ---------------- */
+let mode = "explore";
+let stepMs = 220, running = false, timer = null, totalSteps = 0;
+let cars = [];
+
+function makeCar(i) {
+  const [x, y, d] = STARTS[i];
+  return {
+    id:i, x, y, dir:d, phase:1, finished:false, finishStep:null, target:null,
+    known:new Uint8Array(N*N*4), visited:new Set([y*N+x]),
+    moves:0, turns:0, plan:[],
+    px:x, py:y, pang:ANGLES[d], ang:ANGLES[d],   // animation
+  };
+}
+function reset() {
+  cars = [0,1,2,3].map(makeCar);
+  totalSteps = 0; running = false; clearInterval(timer); timer = null;
+  runBtn.textContent = "Run";
+  banner.textContent = "";
+  if (mode === "shortest") for (const c of cars) loadFullMap(c);
+  draw(); updateStats();
+}
+
+/* ---------------- maze / map helpers ---------------- */
+const inb = (x,y) => x >= 0 && x < N && y >= 0 && y < N;
+const kidx = (x,y,d) => (y*N + x)*4 + d;
+const inZone = (z,x,y) => x >= ZONES[z][0] && x <= ZONES[z][1] && y >= ZONES[z][2] && y <= ZONES[z][3];
+const cellKey = (x,y) => x + "," + y;
+
+function loadFullMap(c) {
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++)
+    for (let d = 0; d < 4; d++) c.known[kidx(x,y,d)] = MAZE_W[y][x][d] ? 1 : 0;
+}
+function sense(c) {   // reveal true walls adjacent to the car
+  for (let d = 0; d < 4; d++) {
+    const nx = c.x + DX[d], ny = c.y + DY[d];
+    c.known[kidx(c.x,c.y,d)] = MAZE_W[c.y][c.x][d] ? 1 : 0;
+    if (inb(nx,ny)) c.known[kidx(nx,ny,OPP[d])] = MAZE_W[ny][nx][OPP[d]] ? 1 : 0;
+  }
+}
+function forbidFor(c) {
+  const f = new Set();
+  for (let i = 0; i < 4; i++) if (i !== c.id) RESERVED[i].forEach(k => f.add(k));
+  if (mode === "explore" && c.phase === 1) {
+    RESERVED[c.id].forEach(k => f.add(k));
+    // phase 1 stays inside the quadrant: forbid everything outside it
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++)
+      if (!inZone(c.id, x, y)) f.add(cellKey(x, y));
+  }
+  if (mode === "explore" && c.phase < 2) {
+    RESERVED[c.id].forEach(k => f.add(k));
+    if (c.phase === 1) {
+      // phase 1 stays inside the quadrant: forbid everything outside it
+      for (let y = 0; y < N; y++) for (let x = 0; x < N; x++)
+        if (!inZone(c.id, x, y)) f.add(cellKey(x, y));
+    }
+  }
+  return f;
+}
+function canGo(c, x, y, d, f) {          // known-open passage into an allowed cell
+  if (c.known[kidx(x,y,d)]) return false;
+  const nx = x + DX[d], ny = y + DY[d];
+  if (!inb(nx,ny)) return false;
+  if (f.has(cellKey(nx,ny))) return false;
+  return true;
+}
+
+/* ---------------- planning (Dijkstra with turn penalty) ---------------- */
+function planFrom(c, sx, sy, sdir, goals, f) {
+  // goals: Set of "x,y". returns {path:[[x,y]..], endDir, turns} or null
+  const D = new Float64Array(N*N*4).fill(Infinity);
+  const prev = new Int32Array(N*N*4).fill(-1);
+  const s = kidx(sx,sy,sdir); D[s] = 0;
+  const pq = [[0, s]];
+  const pop = () => { let bi = 0; for (let i = 1; i < pq.length; i++) if (pq[i][0] < pq[bi][0]) bi = i;
+                      return pq.splice(bi,1)[0]; };
+  let end = -1;
+  while (pq.length) {
+    const [d0, st] = pop();
+    if (d0 > D[st]) continue;
+    const x = (st >> 2) % N, y = (st >> 2) / N | 0, dir = st & 3;
+    if (goals.has(cellKey(x,y))) { end = st; break; }
+    const push = (nd, cost) => {
+      const ns = kidx(x,y,nd);
+      if (d0 + cost < D[ns]) { D[ns] = d0 + cost; prev[ns] = st; pq.push([D[ns], ns]); }
+    };
+    push((dir+1)&3, TURN_COST); push((dir+3)&3, TURN_COST); push((dir+2)&3, 2*TURN_COST);
+    if (canGo(c, x, y, dir, f)) {
+      const nx = x + DX[dir], ny = y + DY[dir];
+      const ns = kidx(nx,ny,dir);
+      if (d0 + 1 < D[ns]) { D[ns] = d0 + 1; prev[ns] = st; pq.push([D[ns], ns]); }
+    }
+  }
+  if (end < 0) return null;
+  // reconstruct the action chain and derive: route cells, first move dir, turns
+  const states = [];
+  let st = end;
+  while (st !== s && st >= 0) { states.unshift(st); st = prev[st]; }
+  const path = [];
+  let turns = 0, firstDir = -1, prevDir = sdir, px = sx, py = sy;
+  for (const stt of states) {
+    const x = (stt >> 2) % N, y = (stt >> 2) / N | 0, dir = stt & 3;
+    if (dir !== prevDir) turns += (dir === ((prevDir + 2) & 3)) ? 2 : 1;
+    if ((x !== px || y !== py)) {
+      if (firstDir < 0) firstDir = dir;
+      path.push([x, y]);
+    }
+    prevDir = dir; px = x; py = y;
+  }
+  return { path, firstDir, turns };
+}
+function bfsHops(c, sx, sy, f) {         // reachable-cell distances over known map
+  const D = new Int16Array(N*N).fill(-1);
+  const q = [[sx,sy]]; D[sy*N+sx] = 0;
+  while (q.length) {
+    const [x,y] = q.shift();
+    for (let d = 0; d < 4; d++) {
+      if (!canGo(c, x, y, d, f)) continue;
+      const nx = x + DX[d], ny = y + DY[d];
+      if (D[ny*N+nx] < 0) { D[ny*N+nx] = D[y*N+x] + 1; q.push([nx,ny]); }
+    }
+  }
+  return D;
+}
+
+/* ---------------- one decision per car ---------------- */
+function decide(c) {
+  sense(c);
+  const f = forbidFor(c);
+
+  if (mode === "shortest") {
+    const goals = new Set([cellKey(...CAR_GOALS[c.id])]);
+    const p = planFrom(c, c.x, c.y, c.dir, goals, f);
+    if (!p) return;
+    applyPlan(c, p, f);
+    if (c.x === CAR_GOALS[c.id][0] && c.y === CAR_GOALS[c.id][1] && !c.finished) {
+      c.finished = true; c.finishStep = totalSteps;
+    }
+    return;
+  }
+
+  const hops = bfsHops(c, c.x, c.y, f);
+  if (c.phase < 2) {
+    // keep the current target until it is visited or becomes unreachable
+    let t = c.target;
+    const valid = t && !c.visited.has(t[1]*N + t[0]) &&
+                  !RESERVED[c.id].has(cellKey(...t)) && hops[t[1]*N + t[0]] >= 0;
+    if (!valid) {
+      let best = null, bd = -1;
+      for (let y = ZONES[c.id][2]; y <= ZONES[c.id][3]; y++)
+        for (let x = ZONES[c.id][0]; x <= ZONES[c.id][1]; x++) {
+          const k = y*N + x, kk = cellKey(x,y);
+          if (c.visited.has(k) || RESERVED[c.id].has(kk) || hops[k] < 0) continue;
+          if (hops[k] > bd) { bd = hops[k]; best = [x, y]; }
+        }
+      c.target = best;
+      if (!best) {
+        if (c.phase === 1) { c.phase = 1.5; c.target = null; return decide(c); }
+        c.phase = 2; c.target = null; return decide(c);
+      }
+    }
+    const p = planFrom(c, c.x, c.y, c.dir, new Set([cellKey(...c.target)]), f);
+    if (!p) { // unreachable now - wait for the map to grow
+      c.target = null; c.visited.add(c.y*N + c.x); return;
+    }
+    applyPlan(c, p, f);
+  } else {
+    const pending = new Set();
+    RESERVED[c.id].forEach(k => { const [x,y] = k.split(",").map(Number);
+                                  if (!c.visited.has(y*N+x)) pending.add(k); });
+    // zone cells left in pockets reachable only through the corridor
+    const zoneLeft = [];
+    for (let y = ZONES[c.id][2]; y <= ZONES[c.id][3]; y++)
+      for (let x = ZONES[c.id][0]; x <= ZONES[c.id][1]; x++) {
+        const k = y*N + x;
+        if (!c.visited.has(k) && hops[k] >= 0) zoneLeft.push([x, y]);
+      }
+    const atGoal = c.x === CAR_GOALS[c.id][0] && c.y === CAR_GOALS[c.id][1];
+    if (atGoal && !pending.size && !zoneLeft.length) {
+      c.finished = true; c.finishStep = totalSteps; return;
+    }
+    let t = c.target, valid;
+    if (t) {
+      const [tx, ty] = t, kk = cellKey(tx,ty);
+      valid = !c.visited.has(ty*N + tx) && hops[ty*N + tx] >= 0 &&
+              (pending.has(kk) || (!pending.size && inZone(c.id,tx,ty)));
+    } else valid = false;
+    if (!valid) {
+      let bestK = null, bd = Infinity;
+      const pool = pending.size ? [...pending].map(k => k.split(",").map(Number))
+                                : (zoneLeft.length ? zoneLeft : [[CAR_GOALS[c.id][0], CAR_GOALS[c.id][1]]]);
+      for (const [x,y] of pool)
+        if (hops[y*N+x] >= 0 && hops[y*N+x] < bd) { bd = hops[y*N+x]; bestK = [x, y]; }
+      c.target = bestK || [CAR_GOALS[c.id][0], CAR_GOALS[c.id][1]];
+    }
+    const p = planFrom(c, c.x, c.y, c.dir, new Set([cellKey(...c.target)]), f);
+    if (!p) return;
+    applyPlan(c, p, f);
+  }
+}
+function applyPlan(c, p, f) {
+  if (!p.path.length) return;              // already standing on the target
+  c.plan = p.path.slice(1);
+  c.turns += p.turns;
+  if (p.firstDir >= 0) { c.pang = ANGLES[c.dir]; c.dir = p.firstDir; c.ang = ANGLES[c.dir]; }
+  const nxt = p.path[0];
+  c.px = c.x; c.py = c.y;
+  c.x = nxt[0]; c.y = nxt[1];
+  c.moves++;
+  c.visited.add(c.y*N + c.x);
+}
+
+/* ---------------- flood map display (car 1) ---------------- */
+function floodMap(c) {
+  const D = new Float64Array(N*N).fill(Infinity);
+  const g = CAR_GOALS[c.id];
+  D[g[1]*N + g[0]] = 0;
+  const q = [[g[0], g[1]]];
+  while (q.length) {
+    const [x, y] = q.shift();
+    for (let d = 0; d < 4; d++) {
+      if (c.known[kidx(x,y,d)]) continue;
+      const nx = x + DX[d], ny = y + DY[d];
+      if (!inb(nx,ny)) continue;
+      if (D[ny*N+nx] > D[y*N+x] + 1) { D[ny*N+nx] = D[y*N+x] + 1; q.push([nx,ny]); }
+    }
+  }
+  return D;
+}
+
+/* ---------------- rendering ---------------- */
+const CELL = 36, PAD = 10;
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+const DPR = window.devicePixelRatio || 1;
+cv.width = (N*CELL + PAD*2) * DPR; cv.height = cv.width;
+cv.style.width = (N*CELL + PAD*2) + "px"; cv.style.height = (N*CELL + PAD*2) + "px";
+ctx.scale(DPR, DPR);
+
+let animT = 1;                             // 0..1 progress of current step
+function draw() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = "#0b1324";
+  ctx.fillRect(0, 0, N*CELL + PAD*2, N*CELL + PAD*2);
+
+  // flood values of car 1
+  if (cars.length) {
+    const F = floodMap(cars[0]);
+    ctx.font = "10px monospace"; ctx.textAlign = "center";
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const v = F[y*N + x];
+      if (v === Infinity) continue;
+      const isGoal = GOAL_CELLS.some(([gx,gy]) => gx===x && gy===y);
+      ctx.fillStyle = isGoal ? "#ffd43b" : "#ff922b";
+      ctx.fillText(isGoal ? "GOAL" : String(v), PAD + x*CELL + CELL/2, PAD + y*CELL + CELL/2 + 3);
+    }
+  }
+  // goal outlines
+  ctx.strokeStyle = "#ffd43b"; ctx.lineWidth = 1.5;
+  for (const [gx,gy] of GOAL_CELLS) ctx.strokeRect(PAD + gx*CELL + 1, PAD + gy*CELL + 1, CELL-2, CELL-2);
+
+  // walls
+  ctx.strokeStyle = "#dbe4f3"; ctx.lineWidth = 2; ctx.lineCap = "round";
+  ctx.beginPath();
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const L = PAD + x*CELL, T = PAD + y*CELL;
+    if (MAZE_W[y][x][0]) { ctx.moveTo(L, T);       ctx.lineTo(L+CELL, T); }
+    if (MAZE_W[y][x][3]) { ctx.moveTo(L, T);       ctx.lineTo(L, T+CELL); }
+    if (x === N-1 && MAZE_W[y][x][1]) { ctx.moveTo(L+CELL, T); ctx.lineTo(L+CELL, T+CELL); }
+    if (y === N-1 && MAZE_W[y][x][2]) { ctx.moveTo(L, T+CELL); ctx.lineTo(L+CELL, T+CELL); }
+  }
+  ctx.stroke();
+
+  // trails
+  if (document.getElementById("trails").checked) {
+    for (const c of cars) {
+      ctx.strokeStyle = c.color || CAR_COLORS[c.id]; ctx.globalAlpha = .35; ctx.lineWidth = 2;
+      ctx.beginPath();
+      let first = true;
+      for (const k of c.visited) {
+        const x = k % N, y = (k / N) | 0;
+        const X = PAD + x*CELL + CELL/2, Y = PAD + y*CELL + CELL/2;
+        if (first) { ctx.moveTo(X, Y); first = false; } else ctx.lineTo(X, Y);
+      }
+      ctx.stroke(); ctx.globalAlpha = 1;
+    }
+  }
+
+  // planned routes (dashed)
+  ctx.setLineDash([6, 5]);
+  for (const c of cars) {
+    if (c.finished || !c.plan.length) continue;
+    ctx.strokeStyle = CAR_COLORS[c.id]; ctx.globalAlpha = .8; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const t = ease(animT);
+    const cx = PAD + (c.px + (c.x - c.px)*t)*CELL + CELL/2;
+    const cy = PAD + (c.py + (c.y - c.py)*t)*CELL + CELL/2;
+    ctx.moveTo(cx, cy);
+    for (const [x,y] of c.plan) ctx.lineTo(PAD + x*CELL + CELL/2, PAD + y*CELL + CELL/2);
+    ctx.stroke(); ctx.globalAlpha = 1;
+  }
+  ctx.setLineDash([]);
+
+  // cars
+  for (const c of cars) {
+    const t = ease(animT);
+    const X = PAD + (c.px + (c.x - c.px)*t)*CELL + CELL/2;
+    const Y = PAD + (c.py + (c.y - c.py)*t)*CELL + CELL/2;
+    let a = c.pang + shortestDelta(c.pang, c.ang)*t;
+    ctx.save(); ctx.translate(X, Y); ctx.rotate(a*Math.PI/180);
+    ctx.fillStyle = CAR_COLORS[c.id];
+    ctx.beginPath();
+    ctx.moveTo(11, 0); ctx.lineTo(-8, 8); ctx.lineTo(-4, 0); ctx.lineTo(-8, -8);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = "#0b1324"; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.restore();
+  }
+}
+const ease = t => 1 - (1 - t)*(1 - t);
+function shortestDelta(a, b) { let d = ((b - a + 540) % 360) - 180; return d; }
+
+/* ---------------- stats & status ---------------- */
+function statusText(c) {
+  if (c.finished) return "Goal Reached In " + (c.finishStep * stepMs / 1000).toFixed(1) + " s";
+  if (running) return "Running";
+  return "Ready";
+}
+function updateStats() {
+  const tb = document.getElementById("stats");
+  while (tb.rows.length > 1) tb.deleteRow(1);
+  cars.forEach((c, i) => {
+    const z = ZONES[i], area = (z[1]-z[0]+1) * (z[3]-z[2]+1);
+    let vis = 0;
+    for (let y = z[2]; y <= z[3]; y++) for (let x = z[0]; x <= z[1]; x++)
+      if (c.visited.has(y*N+x)) vis++;
+    const tr = tb.insertRow(-1);
+    tr.innerHTML =
+      `<td><b style="color:${CAR_COLORS[i]}">${CAR_NAMES[i]}</b></td>` +
+      `<td>${Math.round(vis/area*100)} %</td><td>${c.moves}</td><td>${c.turns}</td>` +
+      `<td>${statusText(c)}</td>`;
+  });
+  const allDone = cars.every(c => c.finished);
+  banner.textContent = allDone ? "Finished Race" : "";
+}
+
+/* ---------------- simulation loop ---------------- */
+function step() {
+  totalSteps++;
+  for (const c of cars) if (!c.finished) decide(c);
+  animT = 0;
+  updateStats();
+}
+function tick() {
+  animT = Math.min(1, animT + 16 / stepMs);
+  draw();
+  if (animT >= 1 && cars.every(c => c.finished)) { running = false; clearInterval(timer); runBtn.textContent = "Run"; }
+}
+
+/* ---------------- UI wiring ---------------- */
+const runBtn = document.getElementById("runBtn");
+const banner = document.getElementById("banner");
+runBtn.onclick = () => {
+  running = !running;
+  runBtn.textContent = running ? "Pause" : "Run";
+  if (running) {
+    timer = setInterval(() => { if (animT >= 1) step(); tick(); }, stepMs);
+  } else clearInterval(timer);
+};
+document.getElementById("stepBtn").onclick = () => { if (animT >= 1) { step(); tick(); } };
+document.getElementById("resetBtn").onclick = reset;
+document.getElementById("modeSel").onchange = e => { mode = e.target.value; reset(); };
+document.getElementById("speed").oninput = e => {
+  stepMs = +e.target.value;
+  document.getElementById("spdLbl").textContent = stepMs + " ms";
+  if (running) { clearInterval(timer); timer = setInterval(() => { if (animT >= 1) step(); tick(); }, stepMs); }
+};
+document.getElementById("trails").onchange = draw;
+
+reset();
+</script>
+</body>
+</html>
