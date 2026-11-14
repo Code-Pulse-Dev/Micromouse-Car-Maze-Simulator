@@ -901,10 +901,12 @@ function step() {
     }
     sense(c);
     let acted;
-    // on the website the cars are always driven by the same engine as the
-    // built-in scenarios, regardless of which car type is selected in the
-    // Car Code panel; the selection only affects what that panel reports
+    // the ESP32-S3 and TQD car types run on the same engine as the built-in
+    // scenarios; any other uploaded code ("My car") is simulated for real,
+    // exactly like the desktop app does
+    const pinned = adapterState.type === "carA" || adapterState.type === "carB";
     if (jsStub) acted = adapterDecide(c);
+    else if (!pinned && adapterState.type !== "builtin" && adapterState.source) acted = adapterDecide(c);
     else acted = desktopMove(c);
     if (!acted) {
       c.finished = true; c.finishStep = totalSteps;
@@ -1649,6 +1651,9 @@ const uploadBtnStyle = s => "border-radius:6px;padding:7px 14px;font:600 13px 'S
 
 function showUploadDialog(key) {
   uploadTarget = key;
+  // already connected: the chooser was shown before the upload - go straight
+  // to the adapters browser (one click there re-uploads or closes)
+  if (adapterState.type === key && adapterState.source) { ghOpen(key); return; }
   const chosen = document.querySelector('input[name=cartype]:checked');
   const model = chosen ? chosen.value : null;
   const gitBtn = '<button id="upOpenGit" style="' + uploadBtnStyle(
