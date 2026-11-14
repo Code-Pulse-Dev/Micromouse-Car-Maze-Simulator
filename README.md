@@ -48,8 +48,11 @@ No installation needed — open the hosted version and press **Run**:
 
 **https://code-pulse-dev.github.io/Micromouse-Car-Maze-Simulator/**
 
-The browser version runs the same 16 × 16 maze, the same flood-fill sweep, the same
-reserved-corridor rules and the same shortest-path race as the desktop application.
+The browser version mirrors the desktop app: the same three-column layout (maze, control
+column, tabbed Movement / Maze Tools / Status / Car Code / Hardware panel), the same
+four-car flood-fill sweep and shortest-path race, maze editing, generation, analysis,
+save and load, recordings with replay, **your own car code running in the browser**
+(Python via Pyodide) and a **real-car USB panel** using the Web Serial API.
 
 ## Quick Start
 
@@ -213,8 +216,10 @@ No. During exploration every car is confined to its own quadrant and reserved co
 the four simultaneous runs never share a cell.
 
 **Does the browser version have the car-code adapters and hardware panel?**
-No — those need a real filesystem and serial ports, so they live in the desktop app. The
-browser version covers the maze, the flood fill, the two race modes and the visuals.
+Yes. Python car code runs in the browser through Pyodide (WebAssembly Python), so both
+shipped adapters and your own `CarController.py` work on the hosted site. The hardware
+panel uses the Web Serial API — supported in Chrome and Edge over https — to pair a real
+car and read its battery; no other browser can reach a serial port by design.
 
 **Is this tied to a specific maze?**
 No. Generate, edit or load any 16 × 16 maze and the same logic applies.

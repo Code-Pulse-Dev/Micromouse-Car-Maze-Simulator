@@ -3,389 +3,644 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Micromouse Car Maze Simulator</title>
+<title>16×16 Micromouse Car Maze Simulator</title>
 <style>
-  :root { --bg:#0f172a; --panel:#162238; --panel2:#1d2d46; --line:#2a3b57; --text:#e6edf7; --dim:#9fb1cc; }
-  * { box-sizing: border-box; }
+  :root { --bg:#0f172a; --panel:#162238; --panel2:#1d2d46; --line:#2a3b57;
+          --text:#e6edf7; --dim:#9fb1cc; --blue:#4dabf7; }
+  * { box-sizing:border-box; }
+  html,body { height:100%; }
   body { margin:0; background:var(--bg); color:var(--text);
          font-family:"Segoe UI", system-ui, Arial, sans-serif; }
-  header { padding:14px 22px 6px; }
-  header h1 { margin:0; font-size:20px; font-weight:600; }
-  header p  { margin:4px 0 0; color:var(--dim); font-size:13px; }
-  .bar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:10px 22px; }
+  button, select, input { font-family:inherit; }
   button, select { background:var(--panel2); color:var(--text); border:1px solid var(--line);
-         border-radius:8px; padding:7px 14px; font-size:13px; cursor:pointer; }
+      border-radius:8px; padding:8px 12px; font-size:13px; cursor:pointer; width:100%; }
   button:hover { background:#25395a; }
   button:disabled { opacity:.45; cursor:default; }
-  label { font-size:13px; color:var(--dim); }
-  input[type=range] { accent-color:#4dabf7; }
-  .layout { display:flex; flex-wrap:wrap; gap:18px; padding:6px 22px 24px; align-items:flex-start; }
-  #cv { background:#0b1324; border:1px solid var(--line); border-radius:10px; }
-  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px;
-           padding:12px 14px; min-width:300px; flex:1; max-width:430px; }
-  .panel h2 { margin:0 0 8px; font-size:14px; font-weight:600; color:var(--dim);
-              text-transform:uppercase; letter-spacing:.06em; }
+  .layout { display:flex; gap:14px; padding:14px; align-items:flex-start; }
+  #cv { background:#0b1324; border:1px solid var(--line); border-radius:10px; cursor:crosshair; display:block; }
+  .mid { width:236px; display:flex; flex-direction:column; gap:8px; }
+  .mid h2 { margin:0 0 6px; font-size:17px; font-weight:600; color:var(--blue); }
+  .sub { font-size:12px; color:var(--dim); text-transform:uppercase; letter-spacing:.05em; margin-top:10px; }
+  .recent { background:var(--panel); border:1px solid var(--line); border-radius:8px;
+            min-height:52px; padding:6px; font-size:12px; color:var(--blue); }
+  .recent div { cursor:pointer; padding:3px 4px; border-radius:4px; }
+  .recent div:hover { background:var(--panel2); }
+  .modes { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:8px; font-size:13px; }
+  .modes label { display:flex; gap:8px; align-items:center; padding:4px 0; color:var(--text); }
+  .right { flex:1; min-width:330px; max-width:530px; background:var(--panel);
+           border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .tabs { display:flex; border-bottom:1px solid var(--line); background:var(--panel2); }
+  .tabs button { border:0; border-radius:0; background:transparent; padding:9px 6px;
+                 font-size:12.5px; color:var(--dim); width:auto; flex:1;
+                 white-space:nowrap; }
+  .tabs button.active { color:#0b1324; background:var(--blue); font-weight:600; }
+  .pane { display:none; padding:14px; }
+  .pane.active { display:block; }
+  .row { display:flex; align-items:center; gap:10px; margin:8px 0; font-size:13px; }
+  .row label { color:var(--text); }
+  input[type=range] { width:100%; accent-color:var(--blue); }
+  input[type=checkbox] { accent-color:var(--blue); width:15px; height:15px; }
+  .chk { display:flex; align-items:center; gap:9px; padding:5px 0; font-size:13px; color:var(--text); }
+  .hint { font-size:12px; color:var(--dim); line-height:1.5; margin-top:10px; }
   table { width:100%; border-collapse:collapse; font-size:12.5px; }
-  th { text-align:left; color:var(--dim); font-weight:600; padding:4px 6px;
-       border-bottom:1px solid var(--line); }
+  th { text-align:left; color:var(--dim); font-weight:600; padding:5px 6px; border-bottom:1px solid var(--line); }
   td { padding:5px 6px; border-bottom:1px solid #1f2d45; }
-  td b { font-weight:600; }
-  .legend { margin-top:12px; font-size:12.5px; line-height:1.7; }
-  .dot { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:6px; }
-  #banner { padding:8px 22px; font-size:14px; min-height:20px; color:#ffd43b; }
-  .err { color:#ff8787; padding:12px 22px; }
+  .statusline { font-size:12.5px; color:#ffd43b; min-height:18px; margin-top:8px; line-height:1.4; }
+  .log { background:#0b1324; border:1px solid var(--line); border-radius:8px; height:120px;
+         overflow:auto; font-family:Consolas, monospace; font-size:11.5px; padding:8px; color:#c9d6ea; }
+  .battery { font-size:13px; color:#69db7c; margin:6px 0; }
+  input[type=text], input[type=number] { background:var(--panel2); color:var(--text);
+      border:1px solid var(--line); border-radius:8px; padding:7px 10px; font-size:13px; width:100%; }
+  .modal { position:fixed; inset:0; background:rgba(5,10,20,.72); display:none;
+           align-items:center; justify-content:center; z-index:20; }
+  .modal.open { display:flex; }
+  .modal .box { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+                padding:18px; width:min(520px, 92vw); }
+  .modal pre { white-space:pre-wrap; font-family:Consolas, monospace; font-size:12.5px;
+               background:#0b1324; border:1px solid var(--line); border-radius:8px; padding:12px; }
 </style>
 </head>
 <body>
-<header>
-  <h1>Micromouse Car Maze Simulator</h1>
-  <p>Four cars, one 16x16 maze. Each car sweeps its own quadrant with flood-fill navigation,
-     then walks its reserved corridor into the centre goal.</p>
-</header>
-
-<div class="bar">
-  <button id="runBtn">Run</button>
-  <button id="stepBtn">Step</button>
-  <button id="resetBtn">Reset</button>
-  <select id="modeSel">
-    <option value="explore" selected>Explore mode</option>
-    <option value="shortest">Shortest Path mode</option>
-  </select>
-  <label>Step time <input id="speed" type="range" min="100" max="400" step="10" value="220"> <span id="spdLbl">220 ms</span></label>
-  <label><input id="trails" type="checkbox"> Trails</label>
-</div>
-<div id="banner"></div>
-
 <div class="layout">
-  <canvas id="cv" width="640" height="640"></canvas>
-  <div class="panel">
-    <h2>Car Statistics</h2>
-    <table id="stats">
-      <tr><th>Car</th><th>Explored</th><th>Distance</th><th>Turns</th><th>Status</th></tr>
-    </table>
-    <div class="legend">
-      <div><span class="dot" style="background:#ff922b"></span>Orange Color: Flood Value (car 1's map)</div>
-      <div><span class="dot" style="background:#ffd43b"></span>Gold Color: Goal</div>
-      <div style="margin-top:6px;color:var(--dim)">
-        Explored = unique cells visited in the car's quadrant. Distance counts every forward move,
-        revisits included. Time = steps x step time.
-      </div>
+  <div><canvas id="cv" width="544" height="544"></canvas></div>
+
+  <div class="mid">
+    <h2>Micromouse Car Simulator</h2>
+    <button id="btnReal">Use Real Maze</button>
+    <button id="btnGen">Generate Maze</button>
+    <button id="btnClear">Clear Interior Walls</button>
+    <button id="btnSave">Save Maze</button>
+    <div class="sub">Recent Maze Saves</div>
+    <div class="recent" id="recent"></div>
+    <div class="sub">Simulation Mode (Four Cars)</div>
+    <div class="modes">
+      <label><input type="radio" name="mode" value="explore" checked> Full Quadrant, Then Centre</label>
+      <label><input type="radio" name="mode" value="shortest"> Shortest Path To Centre</label>
+    </div>
+    <button id="btnReset">Reset Robot</button>
+    <button id="btnRun">Run</button>
+    <button id="btnStep">Step</button>
+    <button id="btnFlood">Recalculate Flood Fill</button>
+  </div>
+
+  <div class="right">
+    <div class="tabs">
+      <button data-tab="movement" class="active">Movement</button>
+      <button data-tab="tools">Maze Tools</button>
+      <button data-tab="status">Status</button>
+      <button data-tab="code">Car Code</button>
+      <button data-tab="hw">Hardware</button>
+    </div>
+
+    <div class="pane active" id="pane-movement">
+      <div class="row"><label>Run Speed (Increase →)</label></div>
+      <input id="speed" type="range" min="120" max="500" step="10" value="300">
+      <div class="row" style="justify-content:flex-end"><span id="speedLbl">Speed 300 (220 ms)</span></div>
+      <div class="chk"><input type="checkbox" id="chkTurn"> <label for="chkTurn">Turn Delay</label></div>
+      <div class="chk"><input type="checkbox" id="chkColl" checked> <label for="chkColl">Collision Checking</label></div>
+      <div class="chk"><input type="checkbox" id="chkTrail"> <label for="chkTrail">Show Movement Trail</label></div>
+      <div class="chk"><input type="checkbox" id="chkPath" checked> <label for="chkPath">Show Path To Target (Dashed)</label></div>
+      <div class="chk"><input type="checkbox" id="chkFar" checked> <label for="chkFar">Sweep Far Cells First</label></div>
+      <div class="hint"><b>Manual Controls:</b> Arrow keys / WASD drive car 1.
+        <b>Space</b> = one Step. Click a cell edge to toggle a wall.</div>
+    </div>
+
+    <div class="pane" id="pane-tools">
+      <button id="btnAnalyze">Analyze Maze</button>
+      <div class="row"><label>Load Maze (JSON)</label></div>
+      <input type="file" id="fileMaze" accept=".json">
+      <div class="row" style="margin-top:12px"><label>Recordings</label></div>
+      <button id="btnRecord">Record</button>
+      <button id="btnReplay" style="margin-top:8px">Replay</button>
+      <button id="btnSaveRec" style="margin-top:8px">Save Recording</button>
+      <input type="file" id="fileRec" accept=".json" style="margin-top:8px">
+      <div class="hint">Record captures every simulation step; save it as JSON or replay it in the browser.</div>
+    </div>
+
+    <div class="pane" id="pane-status">
+      <table id="stats">
+        <tr><th>Car</th><th>Explored</th><th>Distance</th><th>Turns</th><th>Status</th></tr>
+      </table>
+      <div class="statusline" id="telemetry"></div>
+      <div class="sub">Legend</div>
+      <div class="hint">Orange numbers: flood value of car 1 · Gold cells: the centre goals ·
+        Dashed lines: planned route · Green ticks: walls already sensed.</div>
+    </div>
+
+    <div class="pane" id="pane-code">
+      <div class="row"><label>Car Type (all four cars)</label></div>
+      <select id="carType">
+        <option value="builtin" selected>Built-in logic</option>
+        <option value="carA">ESP32-S3 Micromouse adapter</option>
+        <option value="carB">TQD Micromouse JS2 adapter</option>
+        <option value="uploaded">Uploaded code folder</option>
+      </select>
+      <button id="btnUpload" style="margin-top:10px">Upload Code Folder</button>
+      <input type="file" id="fileCode" webkitdirectory directory multiple style="display:none">
+      <div class="statusline" id="codeStatus">Adapter: built-in logic</div>
+      <div class="hint">Your folder must contain a <b>CarController.py</b> defining
+        <b>class CarController</b> with <b>next_move(state)</b> returning
+        <i>forward / left / right / back / stop</i>.<br><br>
+        Python runs in the browser through Pyodide (WebAssembly) — the first load downloads the
+        runtime, so give it a few seconds. The competition rules are enforced by the simulator:
+        a car is held at its quadrant boundary and cannot drive through a wall.</div>
+    </div>
+
+    <div class="pane" id="pane-hw">
+      <div class="row"><label>Baud rate</label><input type="text" id="baud" value="115200"></div>
+      <button id="btnPair">Pair Real Car (USB)</button>
+      <button id="btnUnpair" style="margin-top:8px" disabled>Disconnect</button>
+      <button id="btnPing" style="margin-top:8px" disabled>Request Status (BAT)</button>
+      <div class="battery" id="battery">Battery: Not Connected</div>
+      <div class="log" id="hwLog"></div>
+      <div class="hint">Uses the browser's Web Serial API (Chrome / Edge on https).
+        The car should answer with lines such as <b>{"name":"TQD Micromouse JS2","voltage":7.86}</b>,
+        <b>BAT:7.86V</b> or <b>BAT:87</b> (percent).</div>
     </div>
   </div>
 </div>
 
+<div class="modal" id="modal"><div class="box">
+  <h3 style="margin:0 0 10px">Maze analysis</h3>
+  <pre id="modalText"></pre>
+  <button id="modalClose">Close</button>
+</div></div>
+
 <script>
 "use strict";
-/* ---------------- maze data (real maze, saved 2026-11-14) ---------------- */
-const MAZE_W = [[[true,false,true,true],[true,false,true,false],[true,false,false,false],[true,false,true,false],[true,false,false,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,false,false],[true,false,false,false],[true,false,true,false],[true,false,true,false],[true,false,false,false],[true,false,false,false],[true,true,false,false],[true,true,false,true]],[[true,true,false,true],[true,true,false,true],[false,false,true,true],[true,true,false,false],[false,true,false,true],[true,true,false,true],[true,true,false,true],[true,false,false,true],[false,true,false,false],[false,true,false,true],[true,false,true,true],[true,true,false,false],[false,true,false,true],[false,true,true,true],[false,true,false,true],[false,true,false,true]],[[false,true,false,true],[false,true,false,true],[true,false,false,true],[false,true,true,false],[false,true,false,true],[false,true,false,true],[false,false,false,true],[false,true,true,false],[false,true,true,true],[false,false,true,true],[true,false,true,false],[false,true,true,false],[false,false,true,true],[true,true,false,false],[false,false,true,true],[false,true,false,false]],[[false,true,false,true],[false,false,true,true],[false,true,false,false],[true,false,true,true],[false,true,false,false],[false,false,false,true],[false,true,true,false],[true,true,false,true],[true,false,false,true],[true,false,true,false],[true,false,true,false],[true,false,false,false],[true,true,true,false],[false,true,false,true],[true,true,false,true],[false,true,false,true]],[[false,true,false,true],[true,false,true,true],[false,false,true,false],[true,false,true,false],[false,true,false,false],[false,true,false,true],[true,false,false,true],[false,true,false,false],[false,false,false,true],[true,true,true,false],[true,false,false,true],[false,true,true,false],[true,false,false,true],[false,true,false,false],[false,true,false,true],[false,true,true,true]],[[false,true,false,true],[true,false,false,true],[true,false,true,false],[true,false,true,false],[false,true,false,false],[false,true,false,true],[false,true,false,true],[false,true,false,true],[false,true,false,true],[true,false,false,true],[false,false,true,false],[true,false,false,false],[false,true,false,false],[false,true,true,true],[false,false,false,true],[true,true,false,false]],[[false,true,false,true],[false,true,false,true],[true,false,false,true],[true,false,true,false],[false,false,true,false],[false,true,true,false],[false,true,false,true],[false,false,false,true],[false,true,false,false],[false,false,true,true],[true,true,false,false],[false,true,true,true],[false,false,false,true],[true,false,true,false],[false,true,true,false],[false,true,false,true]],[[false,false,true,true],[false,false,true,false],[false,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[false,true,true,false],[false,true,true,true],[false,true,true,true],[true,false,true,true],[false,false,true,false],[true,false,false,false],[false,false,true,false],[true,false,true,false],[true,true,false,false],[false,true,false,true]],[[true,true,false,true],[true,false,true,true],[true,false,true,false],[true,false,true,false],[true,false,false,false],[true,false,true,false],[true,true,false,false],[true,true,false,true],[true,true,false,true],[true,false,false,true],[true,false,true,false],[false,false,true,false],[true,true,false,false],[true,false,false,true],[false,true,true,false],[false,true,false,true]],[[false,false,false,true],[true,false,true,false],[true,true,false,false],[true,true,false,true],[false,true,false,true],[true,true,false,true],[false,true,false,true],[false,false,false,true],[false,true,false,false],[false,false,false,true],[true,false,true,false],[true,true,false,false],[false,true,false,true],[false,true,false,true],[true,true,false,true],[false,true,false,true]],[[false,true,false,true],[true,false,true,true],[false,false,true,false],[false,true,false,false],[false,false,true,true],[false,true,false,false],[false,true,false,true],[false,true,false,true],[false,true,false,true],[false,true,false,true],[true,false,false,true],[false,true,true,false],[false,false,false,true],[false,false,false,false],[false,false,false,false],[false,true,true,false]],[[false,false,false,true],[true,false,true,false],[true,true,false,false],[false,true,true,true],[true,true,false,true],[false,true,false,true],[false,true,false,true],[false,true,false,true],[false,true,false,true],[false,true,false,true],[false,false,true,true],[true,true,true,false],[false,true,false,true],[false,true,false,true],[false,true,true,true],[true,true,false,true]],[[false,true,false,true],[true,false,true,true],[false,false,true,false],[true,false,false,false],[false,false,true,false],[false,true,true,false],[false,false,false,true],[false,true,true,false],[false,false,true,true],[false,true,true,false],[true,false,true,true],[true,false,false,false],[false,false,true,false],[false,false,true,false],[true,false,true,false],[false,true,false,false]],[[false,true,false,true],[true,false,true,true],[true,true,false,false],[false,false,false,true],[true,false,true,false],[true,false,true,false],[false,true,false,false],[true,false,false,true],[true,true,false,false],[true,false,false,true],[true,true,false,false],[false,true,false,true],[true,true,false,true],[true,true,false,true],[true,true,false,true],[false,true,false,true]],[[false,false,false,true],[true,false,true,false],[false,false,true,false],[false,false,true,false],[true,false,true,false],[true,false,false,false],[false,true,true,false],[false,true,false,true],[false,false,true,true],[false,true,true,false],[false,false,true,true],[false,false,true,false],[false,false,true,false],[false,false,true,false],[false,true,true,false],[false,true,false,true]],[[false,false,true,true],[true,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[false,false,true,false],[true,false,true,false],[false,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[false,true,true,false]]];
-const MAZE_EDITS = {"13,10,1": false, "13,11,2": false, "15,4,2": true};
+/* ============================ maze data ============================ */
+const REAL_MAZE = [[[true,false,true,true],[true,false,true,false],[true,false,false,false],[true,false,true,false],[true,false,false,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,false,false],[true,false,false,false],[true,false,true,false],[true,false,true,false],[true,false,false,false],[true,false,false,false],[true,true,false,false],[true,true,false,true]],[[true,true,false,true],[true,true,false,true],[false,false,true,true],[true,true,false,false],[false,true,false,true],[true,true,false,true],[true,true,false,true],[true,false,false,true],[false,true,false,false],[false,true,false,true],[true,false,true,true],[true,true,false,false],[false,true,false,true],[false,true,true,true],[false,true,false,true],[false,true,false,true]],[[false,true,false,true],[false,true,false,true],[true,false,false,true],[false,true,true,false],[false,true,false,true],[false,true,false,true],[false,false,false,true],[false,true,true,false],[false,true,true,true],[false,false,true,true],[true,false,true,false],[false,true,true,false],[false,false,true,true],[true,true,false,false],[false,false,true,true],[false,true,false,false]],[[false,true,false,true],[false,false,true,true],[false,true,false,false],[true,false,true,true],[false,true,false,false],[false,false,false,true],[false,true,true,false],[true,true,false,true],[true,false,false,true],[true,false,true,false],[true,false,true,false],[true,false,false,false],[true,true,true,false],[false,true,false,true],[true,true,false,true],[false,true,false,true]],[[false,true,false,true],[true,false,true,true],[false,false,true,false],[true,false,true,false],[false,true,false,false],[false,true,false,true],[true,false,false,true],[false,true,false,false],[false,false,false,true],[true,true,true,false],[true,false,false,true],[false,true,true,false],[true,false,false,true],[false,true,false,false],[false,true,false,true],[false,true,true,true]],[[false,true,false,true],[true,false,false,true],[true,false,true,false],[true,false,true,false],[false,true,false,false],[false,true,false,true],[false,true,false,true],[false,true,false,true],[false,true,false,true],[true,false,false,true],[false,false,true,false],[true,false,false,false],[false,true,false,false],[false,true,true,true],[false,false,false,true],[true,true,false,false]],[[false,true,false,true],[false,true,false,true],[true,false,false,true],[true,false,true,false],[false,false,true,false],[false,true,true,false],[false,true,false,true],[false,false,false,true],[false,true,false,false],[false,false,true,true],[true,true,false,false],[false,true,true,true],[false,false,false,true],[true,false,true,false],[false,true,true,false],[false,true,false,true]],[[false,false,true,true],[false,false,true,false],[false,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[false,true,true,false],[false,true,true,true],[false,true,true,true],[true,false,true,true],[false,false,true,false],[true,false,false,false],[false,false,true,false],[true,false,true,false],[true,true,false,false],[false,true,false,true]],[[true,true,false,true],[true,false,true,true],[true,false,true,false],[true,false,true,false],[true,false,false,false],[true,false,true,false],[true,true,false,false],[true,true,false,true],[true,true,false,true],[true,false,false,true],[true,false,true,false],[false,false,true,false],[true,true,false,false],[true,false,false,true],[false,true,true,false],[false,true,false,true]],[[false,false,false,true],[true,false,true,false],[true,true,false,false],[true,true,false,true],[false,true,false,true],[true,true,false,true],[false,true,false,true],[false,false,false,true],[false,true,false,false],[false,false,false,true],[true,false,true,false],[true,true,false,false],[false,true,false,true],[false,true,false,true],[true,true,false,true],[false,true,false,true]],[[false,true,false,true],[true,false,true,true],[false,false,true,false],[false,true,false,false],[false,false,true,true],[false,true,false,false],[false,true,false,true],[false,true,false,true],[false,true,false,true],[false,true,false,true],[true,false,false,true],[false,true,true,false],[false,false,false,true],[false,false,false,false],[false,false,false,false],[false,true,true,false]],[[false,false,false,true],[true,false,true,false],[true,true,false,false],[false,true,true,true],[true,true,false,true],[false,true,false,true],[false,true,false,true],[false,true,false,true],[false,true,false,true],[false,true,false,true],[false,false,true,true],[true,true,true,false],[false,true,false,true],[false,true,false,true],[false,true,true,true],[true,true,false,true]],[[false,true,false,true],[true,false,true,true],[false,false,true,false],[true,false,false,false],[false,false,true,false],[false,true,true,false],[false,false,false,true],[false,true,true,false],[false,false,true,true],[false,true,true,false],[true,false,true,true],[true,false,false,false],[false,false,true,false],[false,false,true,false],[true,false,true,false],[false,true,false,false]],[[false,true,false,true],[true,false,true,true],[true,true,false,false],[false,false,false,true],[true,false,true,false],[true,false,true,false],[false,true,false,false],[true,false,false,true],[true,true,false,false],[true,false,false,true],[true,true,false,false],[false,true,false,true],[true,true,false,true],[true,true,false,true],[true,true,false,true],[false,true,false,true]],[[false,false,false,true],[true,false,true,false],[false,false,true,false],[false,false,true,false],[true,false,true,false],[true,false,false,false],[false,true,true,false],[false,true,false,true],[false,false,true,true],[false,true,true,false],[false,false,true,true],[false,false,true,false],[false,false,true,false],[false,false,true,false],[false,true,true,false],[false,true,false,true]],[[false,false,true,true],[true,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[false,false,true,false],[true,false,true,false],[false,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[true,false,true,false],[false,true,true,false]]];                       // walls[y][x][dir]
+const REAL_EDITS_INIT = {"13,10,1": false, "13,11,2": false, "15,4,2": true};
 
-/* ---------------- constants (ported from maze_simulator.py) ---------------- */
-const N = 16;
+/* ============================ constants ============================ */
+const SIZE = 16;
 const DX = [0, 1, 0, -1], DY = [-1, 0, 1, 0], OPP = [2, 3, 0, 1];
-const GOAL_CELLS = [[7,7],[8,7],[7,8],[8,8]];
-const STARTS = [[0,0,1],[15,0,2],[0,15,3],[15,15,0]];          // x, y, dir (N,E,S,W)
+const GOALS = [[7,7],[8,7],[7,8],[8,8]];
+const STARTS = [[0,0,1],[15,0,2],[0,15,3],[15,15,0]];
+const ZONES = [[0,7,0,7],[8,15,0,7],[0,7,8,15],[8,15,8,15]];
+const GOALS_CAR = [[7,7],[8,7],[7,8],[8,8]];
 const CAR_COLORS = ["#ff6b6b","#4dabf7","#69db7c","#cc8bff"];
 const CAR_NAMES = ["Car 1","Car 2","Car 3","Car 4"];
-const ZONES = [[0,7,0,7],[8,15,0,7],[0,7,8,15],[8,15,8,15]];   // x0,x1,y0,y1
-const CAR_GOALS = [[7,7],[8,7],[7,8],[8,8]];
+const ANGLES = [270, 0, 90, 180];
 const RESERVED = [
   new Set(["7,3","7,4","7,5","7,6"]),
   new Set(["8,3","8,4","8,5","8,6"]),
   new Set(["7,9","7,10","7,11","7,12"]),
   new Set(["8,9","8,10","8,11","8,12"]),
 ];
-const ANGLES = [270, 0, 90, 180];                              // render angle per dir
 const TURN_COST = 0.55;
 
-/* apply the saved wall edits (mirrored like the desktop app) */
-for (const [k, v] of Object.entries(MAZE_EDITS)) {
-  const [x, y, d] = k.split(",").map(Number);
-  MAZE_W[y][x][d] = v;
-  const nx = x + DX[d], ny = y + DY[d];
-  if (nx >= 0 && nx < N && ny >= 0 && ny < N) MAZE_W[ny][nx][OPP[d]] = v;
-}
+/* ============================ maze state ============================ */
+const cloneMaze = m => m.map(row => row.map(cell => cell.slice()));
+let walls = cloneMaze(REAL_MAZE);
+let realEdits = Object.assign({}, REAL_EDITS_INIT);
+let mazeOrigin = "real";
+let mazeName = "Maze 0727";
 
-/* ---------------- state ---------------- */
+function applyEdits(base, edits) {
+  const m = cloneMaze(base);
+  for (const [k, v] of Object.entries(edits)) {
+    const [x, y, d] = k.split(",").map(Number);
+    m[y][x][d] = v;
+    const nx = x + DX[d], ny = y + DY[d];
+    if (inb(nx, ny)) m[ny][nx][OPP[d]] = v;
+  }
+  return m;
+}
+const inb = (x, y) => x >= 0 && x < SIZE && y >= 0 && y < SIZE;
+const cellKey = (x, y) => x + "," + y;
+const inZone = (z, x, y) => x >= ZONES[z][0] && x <= ZONES[z][1] && y >= ZONES[z][2] && y <= ZONES[z][3];
+
+/* ============================ simulation state ============================ */
 let mode = "explore";
-let stepMs = 220, running = false, timer = null, totalSteps = 0;
+let speedVal = 300, stepMs = 220, currentStepDur = 220;
+let running = false, timer = null, totalSteps = 0;
+let turnDelay = false, collisionChecking = true, trails = false, showPath = true, sweepFar = true;
 let cars = [];
+let recording = false, recordedEvents = [], replayFrames = null, replayIdx = 0, replayTimer = null;
+let floodCache = null;
 
 function makeCar(i) {
   const [x, y, d] = STARTS[i];
   return {
-    id:i, x, y, dir:d, phase:1, finished:false, finishStep:null, target:null,
-    known:new Uint8Array(N*N*4), visited:new Set([y*N+x]),
-    moves:0, turns:0, plan:[],
-    px:x, py:y, pang:ANGLES[d], ang:ANGLES[d],   // animation
+    id: i, x, y, dir: d, phase: 1, finished: false, finishStep: null, target: null,
+    known: Array.from({length: SIZE}, () => Array.from({length: SIZE}, () => [false,false,false,false])),
+    visited: new Set([y*SIZE + x]), moves: 0, turns: 0, plan: [],
+    px: x, py: y, pang: ANGLES[d], ang: ANGLES[d], turned: false, stopped: false,
   };
 }
-function reset() {
+function reset(keepMaze) {
+  stopTimers();
   cars = [0,1,2,3].map(makeCar);
-  totalSteps = 0; running = false; clearInterval(timer); timer = null;
-  runBtn.textContent = "Run";
-  banner.textContent = "";
+  totalSteps = 0; running = false;
+  btnRun.textContent = "Run";
+  floodCache = null;
   if (mode === "shortest") for (const c of cars) loadFullMap(c);
+  if (pyControllersActive()) initControllers();
+  telemetry.textContent = "";
   draw(); updateStats();
 }
 
-/* ---------------- maze / map helpers ---------------- */
-const inb = (x,y) => x >= 0 && x < N && y >= 0 && y < N;
-const kidx = (x,y,d) => (y*N + x)*4 + d;
-const inZone = (z,x,y) => x >= ZONES[z][0] && x <= ZONES[z][1] && y >= ZONES[z][2] && y <= ZONES[z][3];
-const cellKey = (x,y) => x + "," + y;
-
+/* ============================ map helpers ============================ */
 function loadFullMap(c) {
-  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++)
-    for (let d = 0; d < 4; d++) c.known[kidx(x,y,d)] = MAZE_W[y][x][d] ? 1 : 0;
+  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++)
+    for (let d = 0; d < 4; d++) c.known[y][x][d] = walls[y][x][d];
 }
-function sense(c) {   // reveal true walls adjacent to the car
+function sense(c) {
   for (let d = 0; d < 4; d++) {
     const nx = c.x + DX[d], ny = c.y + DY[d];
-    c.known[kidx(c.x,c.y,d)] = MAZE_W[c.y][c.x][d] ? 1 : 0;
-    if (inb(nx,ny)) c.known[kidx(nx,ny,OPP[d])] = MAZE_W[ny][nx][OPP[d]] ? 1 : 0;
+    c.known[c.y][c.x][d] = walls[c.y][c.x][d];
+    if (inb(nx, ny)) c.known[ny][nx][OPP[d]] = walls[ny][nx][OPP[d]];
   }
 }
 function forbidFor(c) {
   const f = new Set();
   for (let i = 0; i < 4; i++) if (i !== c.id) RESERVED[i].forEach(k => f.add(k));
-  if (mode === "explore" && c.phase === 1) {
-    RESERVED[c.id].forEach(k => f.add(k));
-    // phase 1 stays inside the quadrant: forbid everything outside it
-    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++)
-      if (!inZone(c.id, x, y)) f.add(cellKey(x, y));
-  }
   if (mode === "explore" && c.phase < 2) {
     RESERVED[c.id].forEach(k => f.add(k));
     if (c.phase === 1) {
-      // phase 1 stays inside the quadrant: forbid everything outside it
-      for (let y = 0; y < N; y++) for (let x = 0; x < N; x++)
+      for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++)
         if (!inZone(c.id, x, y)) f.add(cellKey(x, y));
     }
   }
   return f;
 }
-function canGo(c, x, y, d, f) {          // known-open passage into an allowed cell
-  if (c.known[kidx(x,y,d)]) return false;
+function canGo(c, x, y, d, f) {
+  if (c.known[y][x][d]) return false;
   const nx = x + DX[d], ny = y + DY[d];
-  if (!inb(nx,ny)) return false;
-  if (f.has(cellKey(nx,ny))) return false;
-  return true;
+  if (!inb(nx, ny)) return false;
+  return !f.has(cellKey(nx, ny));
 }
 
-/* ---------------- planning (Dijkstra with turn penalty) ---------------- */
+/* ============================ planning ============================ */
 function planFrom(c, sx, sy, sdir, goals, f) {
-  // goals: Set of "x,y". returns {path:[[x,y]..], endDir, turns} or null
-  const D = new Float64Array(N*N*4).fill(Infinity);
-  const prev = new Int32Array(N*N*4).fill(-1);
-  const s = kidx(sx,sy,sdir); D[s] = 0;
+  const idx = (x,y,d) => ((y*SIZE + x)*4 + d);
+  const D = new Float64Array(SIZE*SIZE*4).fill(Infinity);
+  const prev = new Int32Array(SIZE*SIZE*4).fill(-1);
+  const s = idx(sx, sy, sdir); D[s] = 0;
   const pq = [[0, s]];
   const pop = () => { let bi = 0; for (let i = 1; i < pq.length; i++) if (pq[i][0] < pq[bi][0]) bi = i;
-                      return pq.splice(bi,1)[0]; };
+                      return pq.splice(bi, 1)[0]; };
   let end = -1;
   while (pq.length) {
     const [d0, st] = pop();
     if (d0 > D[st]) continue;
-    const x = (st >> 2) % N, y = (st >> 2) / N | 0, dir = st & 3;
-    if (goals.has(cellKey(x,y))) { end = st; break; }
+    const x = (st >> 2) % SIZE, y = Math.floor((st >> 2) / SIZE), dir = st & 3;
+    if (goals.has(cellKey(x, y))) { end = st; break; }
     const push = (nd, cost) => {
-      const ns = kidx(x,y,nd);
+      const ns = idx(x, y, nd);
       if (d0 + cost < D[ns]) { D[ns] = d0 + cost; prev[ns] = st; pq.push([D[ns], ns]); }
     };
     push((dir+1)&3, TURN_COST); push((dir+3)&3, TURN_COST); push((dir+2)&3, 2*TURN_COST);
     if (canGo(c, x, y, dir, f)) {
       const nx = x + DX[dir], ny = y + DY[dir];
-      const ns = kidx(nx,ny,dir);
+      const ns = idx(nx, ny, dir);
       if (d0 + 1 < D[ns]) { D[ns] = d0 + 1; prev[ns] = st; pq.push([D[ns], ns]); }
     }
   }
   if (end < 0) return null;
-  // reconstruct the action chain and derive: route cells, first move dir, turns
-  const states = [];
-  let st = end;
+  const states = []; let st = end;
   while (st !== s && st >= 0) { states.unshift(st); st = prev[st]; }
-  const path = [];
-  let turns = 0, firstDir = -1, prevDir = sdir, px = sx, py = sy;
+  const path = []; let turns = 0, firstDir = -1, prevDir = sdir, px = sx, py = sy;
   for (const stt of states) {
-    const x = (stt >> 2) % N, y = (stt >> 2) / N | 0, dir = stt & 3;
+    const x = (stt >> 2) % SIZE, y = Math.floor((stt >> 2) / SIZE), dir = stt & 3;
     if (dir !== prevDir) turns += (dir === ((prevDir + 2) & 3)) ? 2 : 1;
-    if ((x !== px || y !== py)) {
-      if (firstDir < 0) firstDir = dir;
-      path.push([x, y]);
-    }
+    if (x !== px || y !== py) { if (firstDir < 0) firstDir = dir; path.push([x, y]); }
     prevDir = dir; px = x; py = y;
   }
   return { path, firstDir, turns };
 }
-function bfsHops(c, sx, sy, f) {         // reachable-cell distances over known map
-  const D = new Int16Array(N*N).fill(-1);
-  const q = [[sx,sy]]; D[sy*N+sx] = 0;
+function bfsHops(c, sx, sy, f) {
+  const D = new Int16Array(SIZE*SIZE).fill(-1);
+  const q = [[sx, sy]]; D[sy*SIZE + sx] = 0;
   while (q.length) {
-    const [x,y] = q.shift();
+    const [x, y] = q.shift();
     for (let d = 0; d < 4; d++) {
       if (!canGo(c, x, y, d, f)) continue;
       const nx = x + DX[d], ny = y + DY[d];
-      if (D[ny*N+nx] < 0) { D[ny*N+nx] = D[y*N+x] + 1; q.push([nx,ny]); }
+      if (D[ny*SIZE + nx] < 0) { D[ny*SIZE + nx] = D[y*SIZE + x] + 1; q.push([nx, ny]); }
     }
   }
   return D;
 }
 
-/* ---------------- one decision per car ---------------- */
-function decide(c) {
-  sense(c);
+/* ============================ built-in controller ============================ */
+function builtinDecide(c) {
   const f = forbidFor(c);
-
   if (mode === "shortest") {
-    const goals = new Set([cellKey(...CAR_GOALS[c.id])]);
-    const p = planFrom(c, c.x, c.y, c.dir, goals, f);
+    const p = planFrom(c, c.x, c.y, c.dir, new Set([cellKey(...GOALS_CAR[c.id])]), f);
     if (!p) return;
-    applyPlan(c, p, f);
-    if (c.x === CAR_GOALS[c.id][0] && c.y === CAR_GOALS[c.id][1] && !c.finished) {
+    applyPlan(c, p);
+    if (c.x === GOALS_CAR[c.id][0] && c.y === GOALS_CAR[c.id][1] && !c.finished) {
       c.finished = true; c.finishStep = totalSteps;
     }
     return;
   }
-
   const hops = bfsHops(c, c.x, c.y, f);
   if (c.phase < 2) {
-    // keep the current target until it is visited or becomes unreachable
     let t = c.target;
-    const valid = t && !c.visited.has(t[1]*N + t[0]) &&
-                  !RESERVED[c.id].has(cellKey(...t)) && hops[t[1]*N + t[0]] >= 0;
+    const valid = t && !c.visited.has(t[1]*SIZE + t[0]) &&
+                  !RESERVED[c.id].has(cellKey(...t)) && hops[t[1]*SIZE + t[0]] >= 0;
     if (!valid) {
-      let best = null, bd = -1;
+      let best = null, bd = sweepFar ? -1 : Infinity;
       for (let y = ZONES[c.id][2]; y <= ZONES[c.id][3]; y++)
         for (let x = ZONES[c.id][0]; x <= ZONES[c.id][1]; x++) {
-          const k = y*N + x, kk = cellKey(x,y);
+          const k = y*SIZE + x, kk = cellKey(x, y);
           if (c.visited.has(k) || RESERVED[c.id].has(kk) || hops[k] < 0) continue;
-          if (hops[k] > bd) { bd = hops[k]; best = [x, y]; }
+          if (sweepFar ? hops[k] > bd : hops[k] < bd) { bd = hops[k]; best = [x, y]; }
         }
       c.target = best;
-      if (!best) {
-        if (c.phase === 1) { c.phase = 1.5; c.target = null; return decide(c); }
-        c.phase = 2; c.target = null; return decide(c);
-      }
+      if (!best) { c.phase = 2; c.target = null; return builtinDecide(c); }
     }
     const p = planFrom(c, c.x, c.y, c.dir, new Set([cellKey(...c.target)]), f);
-    if (!p) { // unreachable now - wait for the map to grow
-      c.target = null; c.visited.add(c.y*N + c.x); return;
-    }
-    applyPlan(c, p, f);
+    if (!p) { c.target = null; c.visited.add(c.y*SIZE + c.x); return; }
+    applyPlan(c, p);
   } else {
     const pending = new Set();
-    RESERVED[c.id].forEach(k => { const [x,y] = k.split(",").map(Number);
-                                  if (!c.visited.has(y*N+x)) pending.add(k); });
-    // zone cells left in pockets reachable only through the corridor
+    RESERVED[c.id].forEach(k => { const [x, y] = k.split(",").map(Number);
+                                  if (!c.visited.has(y*SIZE + x)) pending.add(k); });
     const zoneLeft = [];
     for (let y = ZONES[c.id][2]; y <= ZONES[c.id][3]; y++)
       for (let x = ZONES[c.id][0]; x <= ZONES[c.id][1]; x++) {
-        const k = y*N + x;
+        const k = y*SIZE + x;
         if (!c.visited.has(k) && hops[k] >= 0) zoneLeft.push([x, y]);
       }
-    const atGoal = c.x === CAR_GOALS[c.id][0] && c.y === CAR_GOALS[c.id][1];
+    const atGoal = c.x === GOALS_CAR[c.id][0] && c.y === GOALS_CAR[c.id][1];
     if (atGoal && !pending.size && !zoneLeft.length) {
       c.finished = true; c.finishStep = totalSteps; return;
     }
     let t = c.target, valid;
     if (t) {
-      const [tx, ty] = t, kk = cellKey(tx,ty);
-      valid = !c.visited.has(ty*N + tx) && hops[ty*N + tx] >= 0 &&
-              (pending.has(kk) || (!pending.size && inZone(c.id,tx,ty)));
+      const [tx, ty] = t, kk = cellKey(tx, ty);
+      valid = !c.visited.has(ty*SIZE + tx) && hops[ty*SIZE + tx] >= 0 &&
+              (pending.has(kk) || (!pending.size && inZone(c.id, tx, ty)));
     } else valid = false;
     if (!valid) {
       let bestK = null, bd = Infinity;
       const pool = pending.size ? [...pending].map(k => k.split(",").map(Number))
-                                : (zoneLeft.length ? zoneLeft : [[CAR_GOALS[c.id][0], CAR_GOALS[c.id][1]]]);
-      for (const [x,y] of pool)
-        if (hops[y*N+x] >= 0 && hops[y*N+x] < bd) { bd = hops[y*N+x]; bestK = [x, y]; }
-      c.target = bestK || [CAR_GOALS[c.id][0], CAR_GOALS[c.id][1]];
+                                : (zoneLeft.length ? zoneLeft : [GOALS_CAR[c.id].slice()]);
+      for (const [x, y] of pool)
+        if (hops[y*SIZE + x] >= 0 && hops[y*SIZE + x] < bd) { bd = hops[y*SIZE + x]; bestK = [x, y]; }
+      c.target = bestK || GOALS_CAR[c.id].slice();
     }
     const p = planFrom(c, c.x, c.y, c.dir, new Set([cellKey(...c.target)]), f);
     if (!p) return;
-    applyPlan(c, p, f);
+    applyPlan(c, p);
   }
 }
-function applyPlan(c, p, f) {
-  if (!p.path.length) return;              // already standing on the target
+function applyPlan(c, p) {
+  if (!p.path.length) return;
   c.plan = p.path.slice(1);
   c.turns += p.turns;
+  c.turned = p.turns > 0;
   if (p.firstDir >= 0) { c.pang = ANGLES[c.dir]; c.dir = p.firstDir; c.ang = ANGLES[c.dir]; }
   const nxt = p.path[0];
+  if (mode === "shortest" && collisionChecking && occupiedByOther(c, nxt[0], nxt[1])) {
+    telemetry.textContent = `Car ${c.id + 1} held: another car is in the way`;
+    c.plan = []; c.turned = false; return;
+  }
   c.px = c.x; c.py = c.y;
   c.x = nxt[0]; c.y = nxt[1];
   c.moves++;
-  c.visited.add(c.y*N + c.x);
+  c.visited.add(c.y*SIZE + c.x);
+}
+function occupiedByOther(c, x, y) {
+  return cars.some(o => o !== c && o.x === x && o.y === y);
 }
 
-/* ---------------- flood map display (car 1) ---------------- */
+/* ============================ adapter (car code) ============================ */
+let pyodide = null, pyClass = null, pyControllers = {}, jsStub = null;
+let adapterState = { type: "builtin", name: "built-in logic", source: null };
+const PY_CDN = "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/";
+
+function pyControllersActive() {
+  return (adapterState.type === "carA" || adapterState.type === "carB" ||
+          adapterState.type === "uploaded") && adapterState.source && !jsStub;
+}
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s);
+  });
+}
+async function ensurePyodide() {
+  if (pyodide) return pyodide;
+  codeStatus.textContent = "Loading Python runtime (Pyodide)…";
+  if (!window.loadPyodide) await loadScript(PY_CDN + "pyodide.js");
+  pyodide = await window.loadPyodide({ indexURL: PY_CDN });
+  pyodide.runPython(`
+_NS = {}
+_CLS = None
+_ctrls = {}
+def _mk_state(s):
+    d = s.to_py()
+    return {
+        "position": (int(d["position"][0]), int(d["position"][1])),
+        "direction": int(d["direction"]),
+        "sensors": {"front": bool(d["sensors"]["front"]),
+                    "left": bool(d["sensors"]["left"]),
+                    "right": bool(d["sensors"]["right"])},
+        "walls": [[[bool(v) for v in cell] for cell in row] for row in d["walls"]],
+        "visited": set((int(p[0]), int(p[1])) for p in d["visited"]),
+        "goal": (int(d["goal"][0]), int(d["goal"][1])),
+        "quadrant": {"x": range(int(d["qx0"]), int(d["qx1"]) + 1),
+                     "y": range(int(d["qy0"]), int(d["qy1"]) + 1)},
+        "scenario": str(d["scenario"]),
+        "sweep_order": str(d["sweep_order"]),
+        "size": int(d["size"]),
+    }
+def _call(idx, s):
+    return _ctrls[int(idx)].next_move(_mk_state(s))
+`);
+  return pyodide;
+}
+async function installAdapterSource(src, name) {
+  try {
+    await ensurePyodide();
+    pyodide.globals.set("__SRC__", src);
+    pyodide.runPython(`
+_NS = {}
+exec(compile(__SRC__, "CarController.py", "exec"), _NS)
+_CLS = _NS["CarController"]
+`);
+    adapterState.source = src;
+    adapterState.name = name;
+    codeStatus.textContent = `Ready: ${name} - Adapter Uploaded`;
+    reset();
+  } catch (e) {
+    codeStatus.textContent = "Adapter error: " + e.message;
+    adapterState.type = "builtin";
+    carTypeSel.value = "builtin";
+  }
+}
+function initControllers() {
+  if (!pyodide || !pyClassActive()) return;
+  try {
+    pyodide.runPython("_ctrls = {i: _CLS(i) for i in range(4)}");
+  } catch (e) { codeStatus.textContent = "Controller init failed: " + e.message; }
+}
+const pyClassActive = () => { try { return pyodide && pyodide.runPython("_CLS is not None"); } catch { return false; } };
+
+function callController(idx, state) {
+  if (jsStub) return String(jsStub(idx, state));
+  pyodide.globals.set("__ST__", state);
+  return String(pyodide.runPython(`_call(${idx}, __ST__)`));
+}
+
+function adapterDecide(c) {
+  const z = ZONES[c.id];
+  const outside = (x, y) => !inZone(c.id, x, y);
+  const blocked = d => {
+    const nx = c.x + DX[d], ny = c.y + DY[d];
+    return walls[c.y][c.x][d] || outside(nx, ny);
+  };
+  const sensors = { front: blocked(c.dir), left: blocked((c.dir + 3) % 4), right: blocked((c.dir + 1) % 4) };
+  const wallsState = mode === "shortest" ? quadrantWallMatrix(c.id) : c.known;
+  const visitedArr = [...c.visited].map(k => [k % SIZE, Math.floor(k / SIZE)]);
+  const state = {
+    position: [c.x, c.y], direction: c.dir, sensors: sensors, walls: wallsState,
+    visited: visitedArr, goal: GOALS_CAR[c.id], qx0: z[0], qx1: z[1], qy0: z[2], qy1: z[3],
+    scenario: mode, sweep_order: sweepFar ? "far" : "near", size: SIZE,
+  };
+  let action;
+  try { action = callController(c.id, state).trim().toLowerCase(); }
+  catch (e) { telemetry.textContent = `Car ${c.id + 1} code error: ${e.message}`; return; }
+  if (action === "left" || action === "right" || action === "back") {
+    const turn = { left: 3, right: 1, back: 2 }[action];
+    c.pang = ANGLES[c.dir]; c.dir = (c.dir + turn) % 4; c.ang = ANGLES[c.dir];
+    c.turns += 1; c.turned = true;
+    c.plan = [];
+    return;
+  }
+  if (action === "stop") {
+    c.stopped = true; c.finished = true; c.finishStep = totalSteps; telemetry.textContent = `Car ${c.id + 1} retired (stop)`;
+    return;
+  }
+  if (action === "forward") {
+    const nx = c.x + DX[c.dir], ny = c.y + DY[c.dir];
+    if (outside(nx, ny)) { telemetry.textContent = `Car ${c.id + 1} held at its quadrant boundary`; return; }
+    if (walls[c.y][c.x][c.dir]) { telemetry.textContent = `Car ${c.id + 1} code tried to drive into a wall`; return; }
+    if (mode === "shortest" && collisionChecking && occupiedByOther(c, nx, ny)) {
+      telemetry.textContent = `Car ${c.id + 1} held: another car is in the way`; return;
+    }
+    c.plan = [[nx, ny]];
+    c.px = c.x; c.py = c.y; c.x = nx; c.y = ny; c.moves++; c.turned = false;
+    c.visited.add(ny*SIZE + nx);
+    if (c.x === GOALS_CAR[c.id][0] && c.y === GOALS_CAR[c.id][1]) { c.finished = true; c.finishStep = totalSteps; }
+    return;
+  }
+  telemetry.textContent = `Car ${c.id + 1} code returned unknown action ${JSON.stringify(action)}`;
+}
+function quadrantWallMatrix(i) {
+  const z = ZONES[i];
+  const m = walls.map(row => row.map(cell => cell.slice()));
+  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
+    const inside = inZone(i, x, y);
+    for (let d = 0; d < 4; d++) {
+      const nx = x + DX[d], ny = y + DY[d];
+      if (!inside || !inb(nx, ny) || !inZone(i, nx, ny)) m[y][x][d] = true;
+    }
+  }
+  return m;
+}
+
+/* ============================ step / timers ============================ */
+function step() {
+  totalSteps++;
+  for (const c of cars) if (!c.finished) {
+    sense(c);
+    if (adapterState.type !== "builtin" && (adapterState.source || jsStub)) adapterDecide(c);
+    else builtinDecide(c);
+  }
+  const anyTurn = cars.some(c => c.turned);
+  currentStepDur = stepMs + (turnDelay && anyTurn ? 150 : 0);
+  animT = 0;
+  if (recording) recordFrame();
+  updateStats();
+}
+function stopTimers() {
+  if (timer) clearInterval(timer); timer = null;
+  if (replayTimer) clearInterval(replayTimer); replayTimer = null;
+  running = false;
+}
+function tick() {
+  animT = Math.min(1, animT + 16 / currentStepDur);
+  draw();
+  if (animT >= 1 && cars.every(c => c.finished)) {
+    stopTimers(); btnRun.textContent = "Run"; updateStats();
+  }
+}
+function startLoop() {
+  running = true; btnRun.textContent = "Pause";
+  timer = setInterval(() => { if (animT >= 1) step(); tick(); }, Math.max(30, Math.min(stepMs, currentStepDur)));
+}
+
+/* ============================ rendering ============================ */
+const CELL = 34, PAD = 12;
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+const DPR = window.devicePixelRatio || 1;
+cv.width = (SIZE*CELL + PAD*2) * DPR; cv.height = cv.width;
+cv.style.width = (SIZE*CELL + PAD*2) + "px";
+cv.style.height = (SIZE*CELL + PAD*2) + "px";
+ctx.scale(DPR, DPR);
+let animT = 1;
+
 function floodMap(c) {
-  const D = new Float64Array(N*N).fill(Infinity);
-  const g = CAR_GOALS[c.id];
-  D[g[1]*N + g[0]] = 0;
+  if (floodCache) return floodCache;
+  const D = new Float64Array(SIZE*SIZE).fill(Infinity);
+  const g = GOALS_CAR[c.id];
+  D[g[1]*SIZE + g[0]] = 0;
   const q = [[g[0], g[1]]];
   while (q.length) {
     const [x, y] = q.shift();
     for (let d = 0; d < 4; d++) {
-      if (c.known[kidx(x,y,d)]) continue;
+      if (c.known[y][x][d]) continue;
       const nx = x + DX[d], ny = y + DY[d];
-      if (!inb(nx,ny)) continue;
-      if (D[ny*N+nx] > D[y*N+x] + 1) { D[ny*N+nx] = D[y*N+x] + 1; q.push([nx,ny]); }
+      if (!inb(nx, ny)) continue;
+      if (D[ny*SIZE + nx] > D[y*SIZE + x] + 1) { D[ny*SIZE + nx] = D[y*SIZE + x] + 1; q.push([nx, ny]); }
     }
   }
+  floodCache = D;
   return D;
 }
-
-/* ---------------- rendering ---------------- */
-const CELL = 36, PAD = 10;
-const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
-const DPR = window.devicePixelRatio || 1;
-cv.width = (N*CELL + PAD*2) * DPR; cv.height = cv.width;
-cv.style.width = (N*CELL + PAD*2) + "px"; cv.style.height = (N*CELL + PAD*2) + "px";
-ctx.scale(DPR, DPR);
-
-let animT = 1;                             // 0..1 progress of current step
+const ease = t => 1 - (1 - t)*(1 - t);
 function draw() {
-  ctx.clearRect(0, 0, cv.width, cv.height);
-  ctx.fillStyle = "#0b1324";
-  ctx.fillRect(0, 0, N*CELL + PAD*2, N*CELL + PAD*2);
+  const W = SIZE*CELL + PAD*2;
+  ctx.clearRect(0, 0, W, W);
+  ctx.fillStyle = "#0b1324"; ctx.fillRect(0, 0, W, W);
 
-  // flood values of car 1
   if (cars.length) {
     const F = floodMap(cars[0]);
-    ctx.font = "10px monospace"; ctx.textAlign = "center";
-    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-      const v = F[y*N + x];
+    ctx.font = "10px Consolas, monospace"; ctx.textAlign = "center";
+    for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
+      const v = F[y*SIZE + x];
       if (v === Infinity) continue;
-      const isGoal = GOAL_CELLS.some(([gx,gy]) => gx===x && gy===y);
+      const isGoal = GOALS.some(([gx, gy]) => gx === x && gy === y);
       ctx.fillStyle = isGoal ? "#ffd43b" : "#ff922b";
       ctx.fillText(isGoal ? "GOAL" : String(v), PAD + x*CELL + CELL/2, PAD + y*CELL + CELL/2 + 3);
     }
   }
-  // goal outlines
   ctx.strokeStyle = "#ffd43b"; ctx.lineWidth = 1.5;
-  for (const [gx,gy] of GOAL_CELLS) ctx.strokeRect(PAD + gx*CELL + 1, PAD + gy*CELL + 1, CELL-2, CELL-2);
+  for (const [gx, gy] of GOALS) ctx.strokeRect(PAD + gx*CELL + 1, PAD + gy*CELL + 1, CELL - 2, CELL - 2);
 
-  // walls
   ctx.strokeStyle = "#dbe4f3"; ctx.lineWidth = 2; ctx.lineCap = "round";
   ctx.beginPath();
-  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
     const L = PAD + x*CELL, T = PAD + y*CELL;
-    if (MAZE_W[y][x][0]) { ctx.moveTo(L, T);       ctx.lineTo(L+CELL, T); }
-    if (MAZE_W[y][x][3]) { ctx.moveTo(L, T);       ctx.lineTo(L, T+CELL); }
-    if (x === N-1 && MAZE_W[y][x][1]) { ctx.moveTo(L+CELL, T); ctx.lineTo(L+CELL, T+CELL); }
-    if (y === N-1 && MAZE_W[y][x][2]) { ctx.moveTo(L, T+CELL); ctx.lineTo(L+CELL, T+CELL); }
+    if (walls[y][x][0]) { ctx.moveTo(L, T); ctx.lineTo(L + CELL, T); }
+    if (walls[y][x][3]) { ctx.moveTo(L, T); ctx.lineTo(L, T + CELL); }
+    if (x === SIZE-1 && walls[y][x][1]) { ctx.moveTo(L+CELL, T); ctx.lineTo(L+CELL, T+CELL); }
+    if (y === SIZE-1 && walls[y][x][2]) { ctx.moveTo(L, T+CELL); ctx.lineTo(L+CELL, T+CELL); }
   }
   ctx.stroke();
 
-  // trails
-  if (document.getElementById("trails").checked) {
+  if (trails) {
     for (const c of cars) {
-      ctx.strokeStyle = c.color || CAR_COLORS[c.id]; ctx.globalAlpha = .35; ctx.lineWidth = 2;
+      ctx.strokeStyle = CAR_COLORS[c.id]; ctx.globalAlpha = .3; ctx.lineWidth = 2;
       ctx.beginPath();
       let first = true;
       for (const k of c.visited) {
-        const x = k % N, y = (k / N) | 0;
+        const x = k % SIZE, y = Math.floor(k / SIZE);
         const X = PAD + x*CELL + CELL/2, Y = PAD + y*CELL + CELL/2;
         if (first) { ctx.moveTo(X, Y); first = false; } else ctx.lineTo(X, Y);
       }
@@ -393,42 +648,55 @@ function draw() {
     }
   }
 
-  // planned routes (dashed)
-  ctx.setLineDash([6, 5]);
-  for (const c of cars) {
-    if (c.finished || !c.plan.length) continue;
-    ctx.strokeStyle = CAR_COLORS[c.id]; ctx.globalAlpha = .8; ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    const t = ease(animT);
-    const cx = PAD + (c.px + (c.x - c.px)*t)*CELL + CELL/2;
-    const cy = PAD + (c.py + (c.y - c.py)*t)*CELL + CELL/2;
-    ctx.moveTo(cx, cy);
-    for (const [x,y] of c.plan) ctx.lineTo(PAD + x*CELL + CELL/2, PAD + y*CELL + CELL/2);
-    ctx.stroke(); ctx.globalAlpha = 1;
+  if (showPath) {
+    ctx.setLineDash([6, 5]);
+    for (const c of cars) {
+      if (c.finished || !c.plan.length) continue;
+      ctx.strokeStyle = CAR_COLORS[c.id]; ctx.globalAlpha = .85; ctx.lineWidth = 1.5;
+      const t = ease(animT);
+      const cx = PAD + (c.px + (c.x - c.px)*t)*CELL + CELL/2;
+      const cy = PAD + (c.py + (c.y - c.py)*t)*CELL + CELL/2;
+      ctx.beginPath(); ctx.moveTo(cx, cy);
+      for (const [x, y] of c.plan) ctx.lineTo(PAD + x*CELL + CELL/2, PAD + y*CELL + CELL/2);
+      ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    ctx.setLineDash([]);
   }
-  ctx.setLineDash([]);
 
-  // cars
+  // sensed-wall ticks (green), like the desktop sensor indicators
+  ctx.strokeStyle = "#69db7c"; ctx.lineWidth = 3;
+  for (const c of cars) {
+    for (let d = 0; d < 4; d++) {
+      if (!c.known[c.y][c.x][d]) continue;
+      const L = PAD + c.x*CELL, T = PAD + c.y*CELL;
+      ctx.beginPath();
+      if (d === 0) { ctx.moveTo(L + 6, T + 2); ctx.lineTo(L + CELL - 6, T + 2); }
+      if (d === 1) { ctx.moveTo(L + CELL - 2, T + 6); ctx.lineTo(L + CELL - 2, T + CELL - 6); }
+      if (d === 2) { ctx.moveTo(L + 6, T + CELL - 2); ctx.lineTo(L + CELL - 6, T + CELL - 2); }
+      if (d === 3) { ctx.moveTo(L + 2, T + 6); ctx.lineTo(L + 2, T + CELL - 6); }
+      ctx.stroke();
+    }
+  }
+
   for (const c of cars) {
     const t = ease(animT);
     const X = PAD + (c.px + (c.x - c.px)*t)*CELL + CELL/2;
     const Y = PAD + (c.py + (c.y - c.py)*t)*CELL + CELL/2;
-    let a = c.pang + shortestDelta(c.pang, c.ang)*t;
+    const a = c.pang + shortestDelta(c.pang, c.ang)*t;
     ctx.save(); ctx.translate(X, Y); ctx.rotate(a*Math.PI/180);
     ctx.fillStyle = CAR_COLORS[c.id];
-    ctx.beginPath();
-    ctx.moveTo(11, 0); ctx.lineTo(-8, 8); ctx.lineTo(-4, 0); ctx.lineTo(-8, -8);
+    ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-7, 7); ctx.lineTo(-3, 0); ctx.lineTo(-7, -7);
     ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = "#0b1324"; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.strokeStyle = "#0b1324"; ctx.lineWidth = 1.4; ctx.stroke();
     ctx.restore();
   }
 }
-const ease = t => 1 - (1 - t)*(1 - t);
-function shortestDelta(a, b) { let d = ((b - a + 540) % 360) - 180; return d; }
+function shortestDelta(a, b) { return ((b - a + 540) % 360) - 180; }
 
-/* ---------------- stats & status ---------------- */
+/* ============================ stats ============================ */
 function statusText(c) {
-  if (c.finished) return "Goal Reached In " + (c.finishStep * stepMs / 1000).toFixed(1) + " s";
+  if (c.stopped) return "Retired";
+  if (c.finished) return "Goal Reached In " + ((c.finishStep ?? 0) * stepMs / 1000).toFixed(1) + " s";
   if (running) return "Running";
   return "Ready";
 }
@@ -439,50 +707,383 @@ function updateStats() {
     const z = ZONES[i], area = (z[1]-z[0]+1) * (z[3]-z[2]+1);
     let vis = 0;
     for (let y = z[2]; y <= z[3]; y++) for (let x = z[0]; x <= z[1]; x++)
-      if (c.visited.has(y*N+x)) vis++;
+      if (c.visited.has(y*SIZE + x)) vis++;
     const tr = tb.insertRow(-1);
-    tr.innerHTML =
-      `<td><b style="color:${CAR_COLORS[i]}">${CAR_NAMES[i]}</b></td>` +
+    tr.innerHTML = `<td><b style="color:${CAR_COLORS[i]}">${CAR_NAMES[i]}</b></td>` +
       `<td>${Math.round(vis/area*100)} %</td><td>${c.moves}</td><td>${c.turns}</td>` +
       `<td>${statusText(c)}</td>`;
   });
-  const allDone = cars.every(c => c.finished);
-  banner.textContent = allDone ? "Finished Race" : "";
+}
+function recordFrame() {
+  if (!recording) return;
+  recordedEvents.push({
+    time: Date.now(),
+    cars: cars.map(c => ({ x: c.x, y: c.y, direction: c.dir })),
+    finished: cars.map(c => c.finished),
+  });
 }
 
-/* ---------------- simulation loop ---------------- */
-function step() {
-  totalSteps++;
-  for (const c of cars) if (!c.finished) decide(c);
-  animT = 0;
-  updateStats();
-}
-function tick() {
-  animT = Math.min(1, animT + 16 / stepMs);
-  draw();
-  if (animT >= 1 && cars.every(c => c.finished)) { running = false; clearInterval(timer); runBtn.textContent = "Run"; }
-}
+/* ============================ UI ============================ */
+const btnRun = document.getElementById("btnRun");
+const telemetry = document.getElementById("telemetry");
+const codeStatus = document.getElementById("codeStatus");
+const carTypeSel = document.getElementById("carType");
+const batteryEl = document.getElementById("battery");
+const hwLog = document.getElementById("hwLog");
+const speedLbl = document.getElementById("speedLbl");
 
-/* ---------------- UI wiring ---------------- */
-const runBtn = document.getElementById("runBtn");
-const banner = document.getElementById("banner");
-runBtn.onclick = () => {
-  running = !running;
-  runBtn.textContent = running ? "Pause" : "Run";
-  if (running) {
-    timer = setInterval(() => { if (animT >= 1) step(); tick(); }, stepMs);
-  } else clearInterval(timer);
+btnRun.onclick = () => {
+  if (running) { stopTimers(); btnRun.textContent = "Run"; }
+  else {
+    if (cars.every(c => c.finished)) reset();
+    startLoop();
+  }
 };
-document.getElementById("stepBtn").onclick = () => { if (animT >= 1) { step(); tick(); } };
-document.getElementById("resetBtn").onclick = reset;
-document.getElementById("modeSel").onchange = e => { mode = e.target.value; reset(); };
+document.getElementById("btnStep").onclick = () => {
+  if (running) return;
+  if (animT >= 1) { step(); tick(); }
+};
+document.getElementById("btnReset").onclick = () => reset();
+document.getElementById("btnFlood").onclick = () => { floodCache = null; draw(); telemetry.textContent = "Flood fill recalculated"; };
+document.querySelectorAll('input[name=mode]').forEach(r => r.onchange = e => {
+  mode = e.target.value; reset();
+});
 document.getElementById("speed").oninput = e => {
-  stepMs = +e.target.value;
-  document.getElementById("spdLbl").textContent = stepMs + " ms";
-  if (running) { clearInterval(timer); timer = setInterval(() => { if (animT >= 1) step(); tick(); }, stepMs); }
+  speedVal = +e.target.value;
+  stepMs = Math.round(speedVal * 220 / 300);
+  speedLbl.textContent = `Speed ${speedVal} (${stepMs} ms)`;
 };
-document.getElementById("trails").onchange = draw;
+document.getElementById("chkTurn").onchange = e => turnDelay = e.target.checked;
+document.getElementById("chkColl").onchange = e => collisionChecking = e.target.checked;
+document.getElementById("chkTrail").onchange = e => { trails = e.target.checked; draw(); };
+document.getElementById("chkPath").onchange = e => { showPath = e.target.checked; draw(); };
+document.getElementById("chkFar").onchange = e => sweepFar = e.target.checked;
 
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".tabs button").forEach(x => x.classList.remove("active"));
+  document.querySelectorAll(".pane").forEach(p => p.classList.remove("active"));
+  b.classList.add("active");
+  document.getElementById("pane-" + b.dataset.tab).classList.add("active");
+});
+
+/* ---------- maze tools ---------- */
+document.getElementById("btnReal").onclick = () => {
+  walls = applyEdits(REAL_MAZE, realEdits);
+  mazeOrigin = "real"; mazeName = "Maze 0727";
+  reset(); telemetry.textContent = "Real maze loaded";
+};
+document.getElementById("btnClear").onclick = () => {
+  walls = walls.map((row, y) => row.map((cell, x) => [
+    y === 0 ? true : false, x === SIZE-1 ? true : false,
+    y === SIZE-1 ? true : false, x === 0 ? true : false,
+  ]));
+  mazeOrigin = "custom"; mazeName = "Cleared maze";
+  reset(); telemetry.textContent = "Interior walls cleared";
+};
+document.getElementById("btnGen").onclick = () => {
+  const m = Array.from({length: SIZE}, () => Array.from({length: SIZE}, () => [false,false,false,false]));
+  const visited = Array.from({length: SIZE}, () => new Array(SIZE).fill(false));
+  const stack = [[0, 0]]; visited[0][0] = true;
+  while (stack.length) {
+    const [x, y] = stack[stack.length - 1];
+    const opts = [];
+    for (let d = 0; d < 4; d++) {
+      const nx = x + DX[d], ny = y + DY[d];
+      if (inb(nx, ny) && !visited[ny][nx]) opts.push([d, nx, ny]);
+    }
+    if (!opts.length) { stack.pop(); continue; }
+    const [d, nx, ny] = opts[Math.floor(Math.random() * opts.length)];
+    m[y][x][d] = false; m[ny][nx][OPP[d]] = false;
+    visited[ny][nx] = true; stack.push([nx, ny]);
+  }
+  for (let i = 0; i < SIZE; i++) {
+    m[0][i][0] = true; m[SIZE-1][i][2] = true;
+    m[i][0][3] = true; m[i][SIZE-1][1] = true;
+  }
+  walls = m; mazeOrigin = "custom"; mazeName = "Generated maze";
+  reset(); telemetry.textContent = "Random maze generated";
+};
+document.getElementById("btnSave").onclick = () => {
+  const name = `Maze ${new Date().toLocaleString([], {day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit"})}`;
+  const blob = new Blob([JSON.stringify({ name, saved_at: new Date().toISOString(), walls }, null, 0)],
+                        { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name.replace(/[^\w]+/g, "_") + ".json"; a.click();
+  const list = JSON.parse(localStorage.getItem("mouse_saves") || "[]");
+  list.unshift({ name, walls });
+  localStorage.setItem("mouse_saves", JSON.stringify(list.slice(0, 5)));
+  renderRecent();
+  telemetry.textContent = `Saved ${name}`;
+};
+function renderRecent() {
+  const el = document.getElementById("recent");
+  const list = JSON.parse(localStorage.getItem("mouse_saves") || "[]");
+  el.innerHTML = "";
+  if (!list.length) { el.textContent = "No saves yet"; return; }
+  list.forEach((entry, i) => {
+    const d = document.createElement("div");
+    d.textContent = entry.name;
+    d.onclick = () => { walls = cloneMaze(entry.walls); mazeOrigin = "custom"; mazeName = entry.name; reset();
+                        telemetry.textContent = `Loaded ${entry.name}`; };
+    el.appendChild(d);
+  });
+}
+document.getElementById("fileMaze").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (!data.walls) throw new Error("no walls array");
+    walls = cloneMaze(data.walls); mazeOrigin = "custom"; mazeName = data.name || f.name;
+    reset(); telemetry.textContent = `Loaded ${mazeName}`;
+  } catch (err) { telemetry.textContent = "Maze load failed: " + err.message; }
+};
+document.getElementById("btnAnalyze").onclick = () => {
+  let open = 0, dead = 0, junctions = 0, passages = 0;
+  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
+    let openSides = 0;
+    for (let d = 0; d < 4; d++) if (!walls[y][x][d]) openSides++;
+    passages += openSides;
+    if (openSides === 0) dead++; else if (openSides === 1) dead++;
+    if (openSides >= 3) junctions++;
+    open += openSides > 0 ? 1 : 0;
+  }
+  let mirror = 0;
+  for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) for (let d = 0; d < 4; d++) {
+    const nx = x + DX[d], ny = y + DY[d];
+    if (inb(nx, ny) && walls[y][x][d] !== walls[ny][nx][OPP[d]]) mirror++;
+  }
+  const seen = new Set(["0,0"]), q = [[0, 0]]; let reach = 0;
+  while (q.length) {
+    const [x, y] = q.shift(); reach++;
+    for (let d = 0; d < 4; d++) {
+      if (walls[y][x][d]) continue;
+      const nx = x + DX[d], ny = y + DY[d];
+      if (inb(nx, ny) && !seen.has(cellKey(nx, ny))) { seen.add(cellKey(nx, ny)); q.push([nx, ny]); }
+    }
+  }
+  const goalsReach = GOALS.every(([gx, gy]) => seen.has(cellKey(gx, gy)));
+  document.getElementById("modalText").textContent =
+    `Name: ${mazeName}\nSize: ${SIZE} x ${SIZE} cells\n` +
+    `Open cells: ${open} / ${SIZE*SIZE}\nPassages: ${passages / 2}\n` +
+    `Dead ends: ${dead}\nJunctions: ${junctions}\n` +
+    `Reachable from (0,0): ${reach} cells\nAll four goals reachable: ${goalsReach ? "yes" : "NO"}\n` +
+    `Wall mirror inconsistencies: ${mirror}\n` +
+    `Validation: ${goalsReach && mirror === 0 ? "maze is valid" : "check the maze"}`;
+  document.getElementById("modal").classList.add("open");
+};
+document.getElementById("modalClose").onclick = () => document.getElementById("modal").classList.remove("open");
+
+/* ---------- recordings ---------- */
+const btnRecord = document.getElementById("btnRecord");
+btnRecord.onclick = () => {
+  if (!recording) { recording = true; recordedEvents = []; recordFrame(); btnRecord.textContent = "Stop Recording";
+                    telemetry.textContent = "Recording started"; return; }
+  recording = false; btnRecord.textContent = "Record";
+  telemetry.textContent = `Recording stopped (${recordedEvents.length} frames)`;
+};
+document.getElementById("btnSaveRec").onclick = () => {
+  if (!recordedEvents.length) { telemetry.textContent = "No recording available"; return; }
+  const blob = new Blob([JSON.stringify(recordedEvents)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "simulation_recording.json"; a.click();
+};
+document.getElementById("fileRec").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { recordedEvents = JSON.parse(await f.text()); telemetry.textContent = `Recording loaded (${recordedEvents.length} frames)`; }
+  catch (err) { telemetry.textContent = "Recording load failed"; }
+};
+document.getElementById("btnReplay").onclick = () => {
+  if (!recordedEvents.length) { telemetry.textContent = "No recording available"; return; }
+  replayFrames = recordedEvents; replayIdx = 0;
+  reset();
+  replayTimer = setInterval(() => {
+    if (replayIdx >= replayFrames.length) {
+      clearInterval(replayTimer); replayTimer = null; telemetry.textContent = "Replay finished"; return;
+    }
+    const f = replayFrames[replayIdx++];
+    cars.forEach((c, i) => {
+      const st = f.cars[i]; if (!st) return;
+      c.px = c.x; c.py = c.y; c.pang = c.ang;
+      c.x = st.x; c.y = st.y; c.dir = st.direction; c.ang = ANGLES[st.direction];
+      c.finished = !!(f.finished && f.finished[i]);
+    });
+    animT = 1; draw(); updateStats();
+  }, Math.max(40, stepMs));
+};
+
+/* ---------- car code ---------- */
+const PRESETS = {
+  carA: { path: "car_codes/ESP32-S3 Micromouse Adapter/CarController.py", name: "ESP32-S3 Micromouse" },
+  carB: { path: "car_codes/TQD Micromouse JS2 Adapter/CarController.py", name: "TQD Micromouse JS2" },
+};
+carTypeSel.onchange = async e => {
+  const v = e.target.value;
+  if (v === "builtin") {
+    adapterState = { type: "builtin", name: "built-in logic", source: null };
+    codeStatus.textContent = "Adapter: built-in logic"; reset(); return;
+  }
+  if (v === "uploaded") {
+    document.getElementById("fileCode").click();
+    return;
+  }
+  const preset = PRESETS[v];
+  codeStatus.textContent = `Loading ${preset.name} adapter…`;
+  try {
+    const r = await fetch(encodeURI(preset.path));
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    adapterState.type = v;
+    await installAdapterSource(await r.text(), preset.name);
+  } catch (err) {
+    codeStatus.textContent = "Could not load adapter (" + err.message + ") — run from the hosted site or upload the folder instead.";
+    carTypeSel.value = "builtin";
+    adapterState = { type: "builtin", name: "built-in logic", source: null };
+  }
+};
+document.getElementById("btnUpload").onclick = () => document.getElementById("fileCode").click();
+document.getElementById("fileCode").onchange = async e => {
+  const files = [...e.target.files];
+  const ctrl = files.find(f => f.name === "CarController.py") || files.find(f => f.name.toLowerCase() === "carcontroller.py");
+  if (!ctrl) { codeStatus.textContent = "No CarController.py found in that folder"; return; }
+  const folder = (ctrl.webkitRelativePath || "").split("/")[0] || "Uploaded car";
+  adapterState.type = "uploaded";
+  await installAdapterSource(await ctrl.text(), folder);
+};
+
+/* ---------- hardware (Web Serial) ---------- */
+let hwPort = null, hwReader = null, hwReading = false;
+const hwStatusLine = text => { hwLogLine(text); };
+function hwLogLine(t) {
+  hwLog.textContent += (hwLog.textContent ? "\n" : "") + t;
+  hwLog.scrollTop = hwLog.scrollHeight;
+}
+async function hwPair() {
+  if (!("serial" in navigator)) {
+    batteryEl.textContent = "Battery: Web Serial not supported (use Chrome/Edge over https)";
+    return;
+  }
+  try {
+    hwPort = await navigator.serial.requestPort();
+    const baud = parseInt(document.getElementById("baud").value, 10) || 115200;
+    await hwPort.open({ baudRate: baud });
+    document.getElementById("btnUnpair").disabled = false;
+    document.getElementById("btnPing").disabled = false;
+    hwLogLine(`Paired at ${baud} baud`);
+    hwReading = true;
+    readLoop();
+  } catch (e) {
+    hwLogLine("Pair failed: " + e.message);
+  }
+}
+async function readLoop() {
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    hwReader = hwPort.readable.getReader();
+    while (hwReading) {
+      const { value, done } = await hwReader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (line) handleHwLine(line);
+      }
+    }
+  } catch (e) {
+    hwLogLine("Read error: " + e.message);
+  } finally {
+    try { hwReader.releaseLock(); } catch {}
+  }
+}
+function handleHwLine(line) {
+  hwLogLine("< " + line);
+  let volts = null;
+  try {
+    const j = JSON.parse(line);
+    if (typeof j.name === "string") hwLogLine("Car: " + j.name);
+    if (typeof j.voltage === "number") volts = j.voltage > 100 ? j.voltage / 1000 : j.voltage;
+  } catch {}
+  const m = line.match(/BAT:\s*([\d.]+)\s*(V|%)?/i);
+  if (m) {
+    const v = parseFloat(m[1]);
+    if (m[2] && m[2].toUpperCase() === "V") volts = v;
+    else if (!m[2] && v <= 12) volts = v;
+    else if (!m[2]) batteryEl.textContent = `Battery: ${v} % - ` +
+      (v >= 90 ? "Fully Charged" : v <= 20 ? "Needs Charging" : "Partly Charged");
+  }
+  if (volts !== null && !isNaN(volts)) {
+    batteryEl.textContent = `Battery: ${volts.toFixed(2)} V - ` +
+      (volts > 8.2 ? "Fully Charged" : volts < 6.8 ? "Needs Charging" : "Partly Charged");
+  }
+}
+document.getElementById("btnPair").onclick = hwPair;
+document.getElementById("btnPing").onclick = async () => {
+  if (!hwPort || !hwPort.writable) return;
+  const w = hwPort.writable.getWriter();
+  await w.write(new TextEncoder().encode("BAT\n"));
+  w.releaseLock();
+  hwLogLine("> BAT");
+};
+document.getElementById("btnUnpair").onclick = async () => {
+  hwReading = false;
+  try { if (hwReader) await hwReader.cancel(); } catch {}
+  try { if (hwPort) await hwPort.close(); } catch {}
+  hwPort = null;
+  document.getElementById("btnUnpair").disabled = true;
+  document.getElementById("btnPing").disabled = true;
+  batteryEl.textContent = "Battery: Not Connected";
+  hwLogLine("Disconnected");
+};
+
+/* ---------- keyboard ---------- */
+document.addEventListener("keydown", e => {
+  const k = e.key.toLowerCase();
+  if (k === " ") { e.preventDefault(); if (!running && animT >= 1) { step(); tick(); } return; }
+  const dirMap = { arrowup: 0, w: 0, arrowright: 1, d: 1, arrowdown: 2, s: 2, arrowleft: 3, a: 3 };
+  if (!(k in dirMap)) return;
+  const c = cars[0];
+  if (!c || c.finished) return;
+  e.preventDefault();
+  c.pang = ANGLES[c.dir]; c.dir = dirMap[k]; c.ang = ANGLES[c.dir];
+  const nx = c.x + DX[c.dir], ny = c.y + DY[c.dir];
+  if (inb(nx, ny) && !walls[c.y][c.x][c.dir]) {
+    c.px = c.x; c.py = c.y; c.x = nx; c.y = ny; c.moves++;
+    c.visited.add(ny*SIZE + nx); animT = 1;
+  }
+  floodCache = null; draw(); updateStats(); if (recording) recordFrame();
+});
+
+/* ---------- cell-edge clicks ---------- */
+cv.addEventListener("click", ev => {
+  const rect = cv.getBoundingClientRect();
+  const mx = (ev.clientX - rect.left) * (cv.width / DPR) / rect.width;
+  const my = (ev.clientY - rect.top) * (cv.width / DPR) / rect.height;
+  const cx = Math.floor((mx - PAD) / CELL), cy = Math.floor((my - PAD) / CELL);
+  if (!inb(cx, cy)) return;
+  const fx = (mx - PAD) - cx * CELL, fy = (my - PAD) - cy * CELL;
+  const dist = [fy, CELL - fx, CELL - fy, fx];        // top, right, bottom, left
+  let d = 0; for (let i = 1; i < 4; i++) if (dist[i] < dist[d]) d = i;
+  toggleWall(cx, cy, d);
+});
+function toggleWall(x, y, d) {
+  const nx = x + DX[d], ny = y + DY[d];
+  // border walls stay closed
+  if (!inb(nx, ny)) return;
+  const value = !walls[y][x][d];
+  walls[y][x][d] = value;
+  walls[ny][nx][OPP[d]] = value;
+  if (mazeOrigin === "real") {
+    realEdits[`${x},${y},${d}`] = value;
+    realEdits[`${nx},${ny},${OPP[d]}`] = value;
+  } else mazeOrigin = "custom";
+  floodCache = null;
+  if (cars.length) { cars.forEach(c => { c.plan = []; }); }
+  draw();
+}
+
+/* ---------- boot ---------- */
+renderRecent();
 reset();
 </script>
 </body>
