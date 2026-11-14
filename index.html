@@ -845,14 +845,10 @@ function adapterDecide(c) {
   if (action === "left" || action === "right" || action === "back") {
     const turn = { left: 3, right: 1, back: 2 }[action];
     const newDir = (c.dir + turn) % 4;
-    // uploaded-code cars change heading INSTANTLY at the corner: no spin
-    // animation and no arc - the car drives to the corner, faces the new
-    // direction immediately and drives on, so the trail draws a clean
-    // right angle (an L), never a circle
-    c.dir = newDir;
-    c.ang = ANGLES[newDir];
-    c.pang = c.ang;
-    c.turns++; c.turned = true; c.plan = [];
+    // uploaded-code cars: drive to the corner, STOP, visibly rotate the
+    // body to face the new direction, then drive straight on - the whole
+    // car makes the L (body orientation included), never an arc
+    doTurn(c, newDir);
     return true;
   }
   if (action === "stop") return false;
