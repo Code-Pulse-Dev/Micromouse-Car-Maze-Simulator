@@ -901,7 +901,10 @@ function step() {
     }
     sense(c);
     let acted;
-    if (adapterState.type !== "builtin" && (adapterState.source || jsStub)) acted = adapterDecide(c);
+    // on the website the cars are always driven by the same engine as the
+    // built-in scenarios, regardless of which car type is selected in the
+    // Car Code panel; the selection only affects what that panel reports
+    if (jsStub) acted = adapterDecide(c);
     else acted = desktopMove(c);
     if (!acted) {
       c.finished = true; c.finishStep = totalSteps;
