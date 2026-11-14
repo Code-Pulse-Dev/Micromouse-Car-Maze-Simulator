@@ -157,6 +157,7 @@
       <div class="row"><label>Run Speed (Increase →)</label></div>
       <input id="speed" type="range" min="20" max="500" step="10" value="300">
       <div class="row" style="justify-content:flex-end"><span id="speedLbl">Speed 300  (220 ms)</span></div>
+      <div class="chk"><input type="checkbox" id="chkTurn" checked> <label for="chkTurn">Turn Delay</label></div>
       <div class="chk"><input type="checkbox" id="chkColl" checked> <label for="chkColl">Collision Checking</label></div>
       <div class="chk"><input type="checkbox" id="chkTrail" checked> <label for="chkTrail">Show Movement Trail</label></div>
       <div class="chk"><input type="checkbox" id="chkPath" checked> <label for="chkPath">Show Path To Target (Dashed)</label></div>
@@ -443,7 +444,7 @@ function desktopMove(c) {
         best = [dist[k], abs];
     }
     if (!best) return false;
-    if (best[1] !== c.dir) { doTurn(c, best[1]); return true; }
+    if (best[1] !== c.dir && turnDelay) { doTurn(c, best[1]); return true; }
     doMove(c, best[1]); return true;
   }
 
@@ -643,7 +644,7 @@ function desktopMove(c) {
     if (v < cur && (best === null || v < best[0])) best = [v, abs];
   }
   if (!best) return false;
-  if (best[1] !== c.dir) { doTurn(c, best[1]); return true; }
+  if (best[1] !== c.dir && turnDelay) { doTurn(c, best[1]); return true; }
   doMove(c, best[1]); return true;
 }
 
@@ -844,10 +845,14 @@ function adapterDecide(c) {
   if (action === "left" || action === "right" || action === "back") {
     const turn = { left: 3, right: 1, back: 2 }[action];
     const newDir = (c.dir + turn) % 4;
-    // every car ALWAYS stops and rotates on the spot when turning -
-    // right angles only, never an arc around the corner
-    doTurn(c, newDir);
-    c.plan = [];
+    // uploaded-code cars change heading INSTANTLY at the corner: no spin
+    // animation and no arc - the car drives to the corner, faces the new
+    // direction immediately and drives on, so the trail draws a clean
+    // right angle (an L), never a circle
+    c.dir = newDir;
+    c.ang = ANGLES[newDir];
+    c.pang = c.ang;
+    c.turns++; c.turned = true; c.plan = [];
     return true;
   }
   if (action === "stop") return false;
@@ -879,9 +884,8 @@ function quadrantWallMatrix(i) {
 /* ============================ step / timers ============================ */
 let stepStart = 0;
 /* One desktop tick: every unfinished car takes exactly one action — a
-   turn-in-place or a one-cell move, so paths always have right angles. A
-   car ends its run when it stands on its own centre goal with the
-   quadrant swept. */
+   turn-in-place (when Turn Delay is on) or a one-cell move. A car ends its
+   run when it stands on its own centre goal with the quadrant swept. */
 function step() {
   totalSteps++;
   let active = false;
@@ -1272,6 +1276,7 @@ document.getElementById("speed").oninput = e => {
   stepMs = Math.max(20, 520 - speedVal);      // same mapping as the desktop app
   speedLbl.textContent = `Speed ${speedVal}  (${stepMs} ms)`;
 };
+document.getElementById("chkTurn").onchange = e => turnDelay = e.target.checked;
 document.getElementById("chkColl").onchange = e => collisionChecking = e.target.checked;
 document.getElementById("chkTrail").onchange = e => { trails = e.target.checked; draw(); };
 document.getElementById("chkPath").onchange = e => { showPath = e.target.checked; draw(); };
