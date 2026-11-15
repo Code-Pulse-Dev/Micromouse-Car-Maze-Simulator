@@ -103,7 +103,8 @@
     .layout { align-items:flex-start; flex-wrap:nowrap; }
     .canvasWrap { width:min(calc(100vh - 30px), calc(100vw - 540px)); min-width:120px; }
     #cv { width:100%; height:auto; max-height:calc(100vh - 30px); }
-    .mid { width:236px; max-width:none; flex:0 0 236px; }
+    .mid { width:236px; max-width:none; flex:0 0 236px;
+           max-height:calc(100vh - 30px); overflow:auto; overscroll-behavior:contain; }
     .right { flex:1 1 180px; min-width:170px; max-width:none;
              max-height:calc(100vh - 30px); overflow:auto; }
     .tabs { overflow-x:auto; }
