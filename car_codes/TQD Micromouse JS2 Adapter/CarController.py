@@ -13,14 +13,6 @@ propagation to neighbouring cells):
 2. RacingRun() then drives the shortest known route through the learned
    map (objectGoto on the flood map).
 
-In the simulator the exploration follows the same clearing pattern as the
-built-in scenario - candidate directions are tried forward, left, right
-(never a U-turn just to reach a "new" cell behind), with the cells
-farthest from the goal cleared first and the held-back corridor entered
-last - so the car turns exactly where the built-in cars turn, drives
-straight down corridors and never wiggles or spins. The goal run and the
-wall memory keep the car's own objectGoto / mapstepEdit logic.
-
 IMPORTANT implementation note: the web simulator passes the state over as
 JavaScript structures (arrays / proxy objects). Every coordinate is
 therefore normalised to plain Python ints at the top of next_move();
