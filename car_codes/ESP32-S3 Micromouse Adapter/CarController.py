@@ -1,4 +1,4 @@
-"""Micromouse Car 1 controller - port of the car's firmware logic, corrected.
+"""Micromouse Car 1 controller - port of the car's firmware logic.
 
 Source: "Micromouse Car 1 Codes (ESP32-S3)/main/distance.cpp" -> navigateMaze()
 
@@ -7,24 +7,19 @@ The firmware's raw rule is:
     front wall -> turn left if open, else right if open, else U-turn
     otherwise  -> drive straight
 
-Run as-is that rule loops forever between two cells around every dead end,
-because the firmware keeps no map: after the U-turn the front is open
-again and it drives back into the dead end it just left. This adapter
-keeps the same decision style (front -> left -> right priority) but adds
-what the firmware is still missing:
 
 1. Wall memory  — the learned wall map (sensors + symmetry) is used, and
-   the car never re-enters a visited cell while an unvisited one is open,
-   so dead ends are left for good.
-2. Backtracking — when the local cell has no unvisited exits, it walks
+   the car never re-enters a visited cell while an unvisited one is open,hence no dead ends.
+2. Backtracking — when the local cell has no unvisited exits, it moves
    (shortest known route) back to the nearest cell that still has one.
 3. Goal logic   — once everything reachable in its quadrant is explored,
    it drives to its centre goal, which ends its run.
 
-Porting note: to fix the real car, main.ino needs the same three things
+On the real car, main.ino:
+
 (persist the wall bits per cell, backtrack to unexplored junctions, detect
-the centre). The simulator adapter shows the intended behaviour.
-"""
+the centre).
+
 
 from collections import deque
 
@@ -34,7 +29,7 @@ SIZE = 16
 
 # Cells held back for the final approach, mirroring the built-in rule: the
 # four cells leading into each car's centre goal are entered only after
-# every other cell of the quadrant has been swept - and the car walks to
+# every other cell of the quadrant has been swept - and the car moves to
 # the far end (the flood-fill 4) first, then descends to the goal.
 RESERVED_CORRIDOR = {
     0: frozenset({(7, 3), (7, 4), (7, 5), (7, 6)}),
