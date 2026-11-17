@@ -2,8 +2,6 @@
 
 The simulator mirrors the reference firmware's conventions:
 N, E, S, W are directions 0..3, and the four centre cells are the goal.
-It is intentionally independent from the Arduino source tree.
-"""
 
 from __future__ import annotations
 
