@@ -20,8 +20,8 @@ quadrant with flood-fill navigation, learn the walls cell by cell, and race down
 corridor into the centre goals. Then flip to Shortest Path mode and watch them race on a
 fully known maze. Load your own car code and see whether *your* strategy beats the built-in one.
 
-Built as part of a university Micromouse competition project, and used to validate navigation
-strategies before risking the real robots.
+Built as part of a Micromouse competition project,and used to validate navigation
+strategies.
 
 ## Table of Contents
 
